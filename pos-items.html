@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shop POS – Items</title>
+<style>
+  /* ---------- COLORS: change these and the whole app changes ---------- */
+  :root {
+    --bg: #f3f5f4; --surface: #ffffff; --text: #14201c; --muted: #5d6b66;
+    --line: #d5dbd8; --accent: #0f6b5c; --accent-text: #ffffff; --danger: #b3261e;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101615; --surface: #18211f; --text: #e6ece9; --muted: #98a8a2;
+      --line: #2c3935; --accent: #4cc2ac; --accent-text: #08201b; --danger: #ff8a80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101615; --surface: #18211f; --text: #e6ece9; --muted: #98a8a2;
+    --line: #2c3935; --accent: #4cc2ac; --accent-text: #08201b; --danger: #ff8a80;
+  }
+
+  /* ---------- LAYOUT ---------- */
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .bar { display: flex; gap: 8px; margin-bottom: 12px; }
+  input { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line);
+          border-radius: 8px; padding: 10px 12px; width: 100%; }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+           color: var(--text); padding: 10px 14px; cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--danger); }
+
+  /* ---------- ITEM ROWS ---------- */
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px; margin-bottom: 8px; }
+  .item-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .name { font-weight: 600; }
+  .price { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .meta { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+  .low { color: var(--danger); font-weight: 600; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions button { padding: 6px 12px; font-size: .9rem; }
+  .empty { text-align: center; color: var(--muted); padding: 32px 8px; }
+
+  /* ---------- POPUP FORMS ---------- */
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+           color: var(--text); width: min(92vw, 420px); padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  label { display: block; font-size: .9rem; color: var(--muted); margin: 10px 0 4px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .error { color: var(--danger); min-height: 1.2em; margin: 8px 0 0; font-size: .9rem; }
+  video { width: 100%; border-radius: 8px; background: #000; max-height: 50vh; }
+  /* ---------- TABS + CHECKOUT ---------- */
+  nav { display: flex; gap: 8px; max-width: 640px; margin: 0 auto; padding: 12px 16px 0; }
+  nav button { flex: 1; }
+  nav button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  [hidden] { display: none !important; }
+  .cart-row { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .cart-top { display: flex; gap: 10px; align-items: baseline; }
+  .cart-top .name { flex: 1; }
+  .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.8em; }
+  .qty { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .qty input { width: 64px; text-align: center; padding: 6px; }
+  .qty button { padding: 6px 12px; }
+  .qty .sp { flex: 1; }
+  .total { display: flex; justify-content: space-between; font-size: 1.4rem; font-weight: 700; padding: 12px 4px; font-variant-numeric: tabular-nums; }
+  .sugg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .msg { min-height: 1.3em; margin: 0 0 8px; font-size: .9rem; color: var(--danger); }
+  .wide { width: 100%; padding: 14px; margin-bottom: 8px; }
+  .rline { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
+  .rline small { display: block; color: var(--muted); }
+  .sec { font-size: 1.05rem; margin: 20px 0 8px; }
+  .mrow, .srow { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
+                 padding: 10px 12px; margin-bottom: 6px; background: var(--surface); border: 1px solid var(--line);
+                 border-radius: 10px; font-variant-numeric: tabular-nums; }
+  .mrow small, .srow small { display: block; color: var(--muted); }
+  textarea { font: .8rem/1.3 ui-monospace, Menlo, Consolas, monospace; color: inherit; background: var(--bg);
+             border: 1px solid var(--line); border-radius: 8px; padding: 8px; width: 100%; margin-top: 8px; }
+  .cam { position: relative; height: 150px; border-radius: 10px; overflow: hidden; background: #000; margin-bottom: 6px; }
+  .cam video { display: none; width: 100%; height: 100%; max-height: none; object-fit: cover; border-radius: 0; }
+  .cam.on video { display: block; }
+  .cam-off { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa7a2; }
+  .cam.on .cam-off { display: none; }
+  .cam.on::after { content: ""; position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; background: rgba(255, 90, 90, .85); }
+</style>
+</head>
+<body>
+<nav>
+  <button id="tabItems" class="on">Items</button>
+  <button id="tabCheckout">Checkout</button>
+  <button id="tabSales">Sales</button>
+</nav>
+
+<main id="itemsView">
+  <h1>Items</h1>
+  <p class="sub" id="count"></p>
+
+  <div class="bar">
+    <input id="search" type="search" placeholder="Search by name or barcode">
+    <button class="primary" id="addBtn">Add item</button>
+  </div>
+
+  <div id="list"></div>
+</main>
+
+<main id="checkoutView" hidden>
+  <h1>Checkout</h1>
+  <p class="sub" id="cartCount"></p>
+  <div class="cam" id="camPanel">
+    <video id="liveVideo" playsinline muted></video>
+    <div class="cam-off">Camera is off</div>
+  </div>
+  <button id="camBtn" type="button" style="width:100%;margin-bottom:6px">Start camera</button>
+  <p class="meta" id="liveMsg" style="margin:0 0 12px"></p>
+  <div class="bar">
+    <input id="scanInput" inputmode="search" autocomplete="off" placeholder="Barcode or item name, then Enter">
+    <button id="cartScanBtn" type="button">Scan</button>
+  </div>
+  <p class="msg" id="cartMsg"></p>
+  <div class="sugg" id="sugg"></div>
+  <div id="cart"></div>
+  <div class="total"><span>Total</span><span id="total">0.00</span></div>
+  <button id="finishBtn" type="button" class="primary wide">Finish sale</button>
+  <button id="clearBtn" type="button" class="danger wide">Clear cart</button>
+</main>
+
+<!-- Add / edit form -->
+<dialog id="formDlg">
+  <h2 id="formTitle" style="margin:0 0 4px">Add item</h2>
+  <label for="fName">Name</label>
+  <input id="fName" autocomplete="off">
+  <label for="fBarcode">Barcode</label>
+  <div class="row">
+    <input id="fBarcode" inputmode="numeric" autocomplete="off" placeholder="Scan or type">
+    <button id="scanBtn" type="button">Scan</button>
+  </div>
+  <div class="row">
+    <div><label for="fPrice">Price</label><input id="fPrice" type="number" inputmode="decimal" min="0" step="0.01"></div>
+    <div><label for="fStock">Stock</label><input id="fStock" type="number" inputmode="numeric" min="0" step="1"></div>
+  </div>
+  <p class="error" id="formError"></p>
+  <div class="form-actions">
+    <button id="cancelBtn" type="button">Cancel</button>
+    <button id="saveBtn" class="primary" type="button">Save item</button>
+  </div>
+</dialog>
+
+<main id="salesView" hidden>
+  <h1>Sales</h1>
+  <p class="sub" id="salesCount"></p>
+  <h2 class="sec">Revenue by month</h2>
+  <div id="months"></div>
+  <h2 class="sec">Receipts (tap one to open it)</h2>
+  <div id="salesList"></div>
+  <button id="backupBtn" type="button" class="wide" style="margin-top:16px">Backup and restore</button>
+</main>
+
+<!-- Backup -->
+<dialog id="backupDlg">
+  <h2 style="margin:0 0 4px">Backup and restore</h2>
+  <p class="meta" style="margin:0">To back up: tap Copy, then paste it somewhere safe (a notes app, or an email to yourself). To restore: paste a saved backup into the box and tap Restore.</p>
+  <textarea id="backupText" rows="8"></textarea>
+  <p class="meta" id="backupMsg"></p>
+  <div class="form-actions">
+    <button id="copyBtn" type="button">Copy</button>
+    <button id="restoreBtn" type="button">Restore from box</button>
+    <button id="backupClose" type="button" class="primary">Close</button>
+  </div>
+</dialog>
+
+<!-- Receipt -->
+<dialog id="receiptDlg">
+  <h2 style="margin:0">Receipt <span id="rcptNo"></span></h2>
+  <p class="meta" id="rcptDate"></p>
+  <div id="rcptLines"></div>
+  <div class="total"><span>Total</span><span id="rcptTotal"></span></div>
+  <div class="form-actions"><button id="rcptDone" type="button" class="primary">Done</button></div>
+</dialog>
+
+<!-- Yes/No confirmation -->
+<dialog id="confirmDlg">
+  <p id="confirmText" style="margin:0"></p>
+  <div class="form-actions">
+    <button id="confirmNo" type="button">Cancel</button>
+    <button id="confirmYes" type="button" class="primary">Yes</button>
+  </div>
+</dialog>
+
+<!-- Camera scanner -->
+<dialog id="scanDlg">
+  <h2 style="margin:0 0 8px">Scan barcode</h2>
+  <video id="video" playsinline muted></video>
+  <p class="error" id="scanMsg"></p>
+  <!-- Fallback: opens the phone's own camera app, then reads the barcode from the photo -->
+  <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+  <div class="form-actions">
+    <button id="photoBtn" type="button">Take a photo instead</button>
+    <button id="scanCancel" type="button">Close</button>
+  </div>
+</dialog>
+
+<script>
+/* =====================================================
+   1. DATA – the list of items lives in "items".
+      We save it in the browser so it survives refreshes.
+   ===================================================== */
+const STORAGE_KEY = "pos_items_v1";
+const CURRENCY = "";          // e.g. set to "$" or "₱" to show a symbol before prices
+const LOW_STOCK = 5;          // stock at or below this is shown in red
+
+let items = loadItems();
+let editingId = null;         // null = adding a new item, otherwise the id being edited
+
+function loadItems() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch (e) { return []; }    // storage empty or blocked: start with an empty list
+}
+function saveItems() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+  catch (e) { alert("Could not save. Your browser may be blocking storage."); }
+}
+
+/* =====================================================
+   2. SHOWING THE LIST
+   ===================================================== */
+const $ = (id) => document.getElementById(id);
+const money = (n) => CURRENCY + Number(n).toFixed(2);
+
+// Our own "Are you sure?" popup. Shows the question; runs onYes only if they confirm.
+function askConfirm(text, yesLabel, onYes) {
+  $("confirmText").textContent = text;
+  $("confirmYes").textContent = yesLabel;
+  $("confirmYes").onclick = () => { $("confirmDlg").close(); onYes(); };
+  $("confirmNo").onclick = () => $("confirmDlg").close();
+  $("confirmDlg").showModal();
+}
+
+function render() {
+  const q = $("search").value.trim().toLowerCase();
+  const shown = items
+    .filter(i => i.name.toLowerCase().includes(q) || i.barcode.includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  $("count").textContent = items.length + (items.length === 1 ? " item" : " items");
+  const list = $("list");
+  list.textContent = "";
+
+  if (shown.length === 0) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = items.length === 0 ? "No items yet. Tap “Add item” to create your first one."
+                                       : "No items match your search.";
+    list.appendChild(p);
+    return;
+  }
+
+  for (const it of shown) {
+    const card = document.createElement("div");
+    card.className = "item";
+
+    const top = document.createElement("div");
+    top.className = "item-top";
+    const name = document.createElement("span");
+    name.className = "name"; name.textContent = it.name;
+    const price = document.createElement("span");
+    price.className = "price"; price.textContent = money(it.price);
+    top.append(name, price);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const stock = document.createElement("span");
+    stock.textContent = "Stock: " + it.stock;
+    if (it.stock <= LOW_STOCK) stock.className = "low";
+    meta.append(stock, document.createTextNode("  ·  Barcode: " + (it.barcode || "none")));
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const edit = document.createElement("button");
+    edit.textContent = "Edit";
+    edit.onclick = () => openForm(it.id);
+    const del = document.createElement("button");
+    del.textContent = "Delete"; del.className = "danger";
+    del.onclick = () => deleteItem(it.id);
+    actions.append(edit, del);
+
+    card.append(top, meta, actions);
+    list.appendChild(card);
+  }
+}
+
+/* =====================================================
+   3. ADD / EDIT / DELETE
+   ===================================================== */
+function openForm(id) {
+  editingId = id || null;
+  const it = items.find(i => i.id === id);
+  $("formTitle").textContent = it ? "Edit item" : "Add item";
+  $("fName").value = it ? it.name : "";
+  $("fBarcode").value = it ? it.barcode : "";
+  $("fPrice").value = it ? it.price : "";
+  $("fStock").value = it ? it.stock : "";
+  $("formError").textContent = "";
+  $("formDlg").showModal();
+}
+
+function submitForm() {
+  const name = $("fName").value.trim();
+  const barcode = $("fBarcode").value.trim();
+  const price = parseFloat($("fPrice").value);
+  const stock = parseInt($("fStock").value, 10);
+
+  // Check the input before saving, and tell the user exactly what to fix
+  if (!name) return fail("Enter a name for the item.");
+  if (isNaN(price) || price < 0) return fail("Enter a price of 0 or more.");
+  if (isNaN(stock) || stock < 0) return fail("Enter a stock count of 0 or more.");
+  if (barcode && items.some(i => i.barcode === barcode && i.id !== editingId))
+    return fail("Another item already uses this barcode.");
+
+  if (editingId) {
+    const it = items.find(i => i.id === editingId);
+    Object.assign(it, { name, barcode, price, stock });
+  } else {
+    items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                 name, barcode, price, stock });
+  }
+  saveItems();
+  $("formDlg").close();
+  render();
+}
+function fail(msg) { $("formError").textContent = msg; }
+
+function deleteItem(id) {
+  const it = items.find(i => i.id === id);
+  askConfirm("Delete “" + it.name + "”? This cannot be undone.", "Delete", () => {
+    items = items.filter(i => i.id !== id);
+    saveItems();
+    render();
+  });
+}
+
+/* =====================================================
+   4. BARCODE SCANNING (uses the phone camera)
+      Works in Chrome on Android. If it isn't available,
+      type the barcode, or use a USB/Bluetooth scanner:
+      those "type" the number into the Barcode box for you.
+   ===================================================== */
+let stream = null, timer = null, onScanned = null;   // onScanned = what to do with the number
+
+async function startScan(callback) {
+  onScanned = callback;
+  $("scanMsg").textContent = "";
+  $("scanDlg").showModal();
+  if (!("BarcodeDetector" in window)) {
+    $("scanMsg").textContent = "Camera scanning isn't supported in this browser. Type the barcode instead.";
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    $("video").srcObject = stream;
+    await $("video").play();
+    const detector = new BarcodeDetector();
+    timer = setInterval(async () => {
+      try {
+        const found = await detector.detect($("video"));
+        if (found.length) {
+          onScanned(found[0].rawValue);   // hand the scanned number to whoever asked
+          stopScan();
+        }
+      } catch (e) { /* ignore a failed frame and try the next one */ }
+    }, 300);
+  } catch (e) {
+    $("scanMsg").textContent = "Couldn't open the camera. Allow camera access, or type the barcode instead.";
+  }
+}
+// Fallback: the phone's camera app takes a photo, then we look for a barcode in it.
+// This works even when the live camera is blocked, because no permission is needed.
+async function readPhoto(file) {
+  if (!file) return;
+  if (!("BarcodeDetector" in window)) {
+    $("scanMsg").textContent = "This browser can't read barcodes. Type the barcode instead.";
+    return;
+  }
+  $("scanMsg").textContent = "Reading photo...";
+  try {
+    const bitmap = await createImageBitmap(file);
+    const found = await new BarcodeDetector().detect(bitmap);
+    if (found.length) {
+      onScanned(found[0].rawValue);
+      stopScan();
+    } else {
+      $("scanMsg").textContent = "No barcode found. Move closer, keep it flat and sharp, and try again.";
+    }
+  } catch (e) {
+    $("scanMsg").textContent = "Couldn't read that photo. Try again or type the barcode.";
+  }
+  $("photoInput").value = "";   // so the same photo can be picked again
+}
+
+function stopScan() {
+  clearInterval(timer);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  if ($("scanDlg").open) $("scanDlg").close();
+}
+
+/* =====================================================
+   5. CHECKOUT – the cart (step 2)
+   ===================================================== */
+let cart = [];   // each line: { id: the item's id, qty: how many }
+
+function button(text, fn) {
+  const b = document.createElement("button");
+  b.textContent = text; b.onclick = fn;
+  return b;
+}
+function showMsg(t) { $("cartMsg").textContent = t || ""; }
+
+// Called with a scanned/typed barcode, or part of an item name
+function addToCart(code) {
+  code = String(code).trim();
+  showMsg(""); $("sugg").textContent = "";
+  if (!code) return;
+  const item = items.find(i => i.barcode && i.barcode === code);
+  if (item) { addItem(item); $("scanInput").value = ""; return; }
+  // not a known barcode: offer items whose name matches what was typed
+  const q = code.toLowerCase();
+  const matches = items.filter(i => i.name.toLowerCase().includes(q)).slice(0, 6);
+  if (!matches.length) { showMsg("No item found for “" + code + "”."); return; }
+  for (const m of matches) {
+    $("sugg").appendChild(button(m.name + " (" + money(m.price) + ")", () => {
+      addItem(m); $("sugg").textContent = ""; $("scanInput").value = "";
+    }));
+  }
+}
+
+function addItem(item) {
+  const line = cart.find(l => l.id === item.id);
+  if ((line ? line.qty : 0) + 1 > item.stock) {
+    showMsg("Only " + item.stock + " of “" + item.name + "” in stock."); return false;
+  }
+  if (line) line.qty++; else cart.push({ id: item.id, qty: 1 });
+  renderCart();
+  return true;
+}
+
+function setQty(id, qty) {
+  const line = cart.find(l => l.id === id);
+  const item = items.find(i => i.id === id);
+  if (!line || !item) return;
+  if (isNaN(qty) || qty < 1) qty = 1;
+  if (qty > item.stock) { qty = item.stock; showMsg("Only " + item.stock + " of “" + item.name + "” in stock."); }
+  else showMsg("");
+  line.qty = qty;
+  renderCart();
+}
+
+function removeLine(id) { cart = cart.filter(l => l.id !== id); renderCart(); }
+
+function renderCart() {
+  // keep the cart honest if items were deleted or stock changed on the Items tab
+  cart = cart.filter(l => items.some(i => i.id === l.id && i.stock > 0));
+  cart.forEach(l => { const it = items.find(i => i.id === l.id); if (l.qty > it.stock) l.qty = it.stock; });
+
+  const box = $("cart");
+  box.textContent = "";
+  let total = 0, units = 0;
+
+  if (cart.length === 0) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = "The cart is empty. Scan an item or type a name above.";
+    box.appendChild(p);
+  }
+
+  cart.forEach((line, n) => {          // n starts at 0, so the row number is n + 1
+    const item = items.find(i => i.id === line.id);
+    total += item.price * line.qty; units += line.qty;
+
+    const row = document.createElement("div"); row.className = "cart-row";
+    const top = document.createElement("div"); top.className = "cart-top";
+    const num = document.createElement("span"); num.className = "num"; num.textContent = (n + 1) + ".";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = item.name;
+    const sum = document.createElement("span"); sum.className = "price"; sum.textContent = money(item.price * line.qty);
+    top.append(num, name, sum);
+
+    const unit = document.createElement("div"); unit.className = "meta"; unit.textContent = money(item.price) + " each";
+
+    const qty = document.createElement("div"); qty.className = "qty";
+    const input = document.createElement("input");
+    input.type = "number"; input.inputMode = "numeric"; input.min = 1; input.value = line.qty;
+    input.onchange = () => setQty(line.id, parseInt(input.value, 10));
+    const sp = document.createElement("span"); sp.className = "sp";
+    const del = button("Remove", () => removeLine(line.id)); del.className = "danger";
+    qty.append(button("−", () => setQty(line.id, line.qty - 1)), input,
+               button("+", () => setQty(line.id, line.qty + 1)), sp, del);
+
+    row.append(top, unit, qty);
+    box.appendChild(row);
+  });
+
+  $("cartCount").textContent = units + (units === 1 ? " item" : " items") + " in cart";
+  $("total").textContent = money(total);
+}
+
+/* ---- Sales: every finished sale is saved here (this is what monthly revenue will use) ---- */
+const SALES_KEY = "pos_sales_v1";
+let sales = loadSales();
+function loadSales() {
+  try { return JSON.parse(localStorage.getItem(SALES_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveSales() {
+  try { localStorage.setItem(SALES_KEY, JSON.stringify(sales)); return true; }
+  catch (e) { return false; }
+}
+
+function finishSale() {
+  if (cart.length === 0) { showMsg("Add at least one item before finishing the sale."); return; }
+
+  // Copy name, barcode and price into the sale, so old receipts stay correct even if prices change later
+  const lines = cart.map(l => {
+    const it = items.find(i => i.id === l.id);
+    return { name: it.name, barcode: it.barcode, price: it.price, qty: l.qty };
+  });
+  const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
+  const no = sales.length ? Math.max(...sales.map(x => x.no)) + 1 : 1;   // receipt number: 1, 2, 3...
+  const sale = { no, date: new Date().toISOString(), lines, total };
+
+  sales.push(sale);
+  if (!saveSales()) { sales.pop(); showMsg("Couldn't save the sale. Nothing was changed."); return; }
+
+  for (const l of cart) items.find(i => i.id === l.id).stock -= l.qty;   // reduce stock
+  saveItems();
+  cart = [];
+  showMsg("");
+  renderCart();
+  render();            // refresh the Items list so the new stock shows
+  showReceipt(sale);
+}
+
+function showReceipt(sale) {
+  $("rcptNo").textContent = "#" + String(sale.no).padStart(4, "0");
+  $("rcptDate").textContent = new Date(sale.date).toLocaleString();
+  const box = $("rcptLines");
+  box.textContent = "";
+  sale.lines.forEach((l, n) => {
+    const row = document.createElement("div"); row.className = "rline";
+    const left = document.createElement("span");
+    left.textContent = (n + 1) + ". " + l.name;
+    const small = document.createElement("small");
+    small.textContent = l.qty + " × " + money(l.price);
+    left.appendChild(small);
+    const right = document.createElement("span");
+    right.textContent = money(l.price * l.qty);
+    row.append(left, right);
+    box.appendChild(row);
+  });
+  $("rcptTotal").textContent = money(sale.total);
+  $("receiptDlg").showModal();
+}
+
+/* ---- Sales tab: monthly revenue + past receipts ---- */
+function renderSales() {
+  $("salesCount").textContent = sales.length + (sales.length === 1 ? " sale" : " sales") + " recorded";
+
+  // Add up revenue per month. The key looks like "2026-10".
+  const byMonth = {};
+  for (const sale of sales) {
+    const d = new Date(sale.date);
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    byMonth[key] = byMonth[key] || { revenue: 0, count: 0 };
+    byMonth[key].revenue += sale.total;
+    byMonth[key].count++;
+  }
+  const months = $("months");
+  months.textContent = "";
+  const keys = Object.keys(byMonth).sort().reverse();       // newest month first
+  if (!keys.length) {
+    const p = document.createElement("p"); p.className = "empty";
+    p.textContent = "No sales yet. Finish a sale at Checkout and it will show up here.";
+    months.appendChild(p);
+  }
+  for (const k of keys) {
+    const [y, m] = k.split("-");
+    const label = new Date(+y, +m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const row = document.createElement("div"); row.className = "mrow";
+    const left = document.createElement("span");
+    left.textContent = label;
+    const small = document.createElement("small");
+    small.textContent = byMonth[k].count + (byMonth[k].count === 1 ? " sale" : " sales");
+    left.appendChild(small);
+    const right = document.createElement("strong");
+    right.textContent = money(Math.round(byMonth[k].revenue * 100) / 100);
+    row.append(left, right);
+    months.appendChild(row);
+  }
+
+  // Receipt list, newest first
+  const list = $("salesList");
+  list.textContent = "";
+  for (const sale of [...sales].reverse()) {
+    const row = document.createElement("button"); row.className = "srow";
+    const left = document.createElement("span");
+    left.textContent = "#" + String(sale.no).padStart(4, "0");
+    const small = document.createElement("small");
+    small.textContent = new Date(sale.date).toLocaleString();
+    left.appendChild(small);
+    const right = document.createElement("strong");
+    right.textContent = money(sale.total);
+    row.append(left, right);
+    row.onclick = () => showReceipt(sale);
+    list.appendChild(row);
+  }
+}
+
+/* ---- Backup: your data lives only in this browser, so keep a copy somewhere safe ---- */
+function openBackup() {
+  $("backupText").value = JSON.stringify({ version: 1, items, sales });
+  $("backupMsg").textContent = "";
+  $("backupDlg").showModal();
+}
+async function copyBackup() {
+  const box = $("backupText");
+  box.select();
+  try {
+    await navigator.clipboard.writeText(box.value);
+    $("backupMsg").textContent = "Copied. Paste it somewhere safe.";
+  } catch (e) {
+    $("backupMsg").textContent = "Couldn't copy automatically. Press and hold the box, then choose Copy.";
+  }
+}
+function restoreBackup() {
+  let data = null;
+  try { data = JSON.parse($("backupText").value); } catch (e) { /* not valid text */ }
+  const ok = data && Array.isArray(data.items) && Array.isArray(data.sales) &&
+    data.items.every(i => i && i.id && typeof i.name === "string" && typeof i.barcode === "string" &&
+                          typeof i.price === "number" && typeof i.stock === "number") &&
+    data.sales.every(x => x && typeof x.no === "number" && typeof x.total === "number" && Array.isArray(x.lines));
+  if (!ok) { $("backupMsg").textContent = "That doesn't look like a backup from this app. Nothing was changed."; return; }
+  askConfirm("Replace all current items and sales with this backup?", "Yes", () => {
+    items = data.items; sales = data.sales;
+    saveItems(); saveSales();
+    cart = [];
+    render(); renderSales(); renderCart();
+    $("backupDlg").close();
+  });
+}
+
+/* ---- Live camera at checkout: keeps scanning and adds each item to the cart ---- */
+let liveStream = null, liveTimer = null, liveBusy = false, lastCode = "", lastSeen = 0;
+
+async function startLive() {
+  $("liveMsg").textContent = "";
+  if (!("BarcodeDetector" in window)) {
+    $("liveMsg").textContent = "This browser can't scan barcodes live. Use the Scan button or type the barcode.";
+    return;
+  }
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  } catch (e) {
+    $("liveMsg").textContent = "Couldn't open the camera. Allow camera access for this page. (It stays blocked inside the preview frame and works when the page is opened on its own web address.)";
+    return;
+  }
+  const v = $("liveVideo");
+  v.srcObject = liveStream;
+  await v.play();
+  $("camPanel").classList.add("on");
+  $("camBtn").textContent = "Stop camera";
+  const detector = new BarcodeDetector();
+  liveTimer = setInterval(async () => {
+    if (liveBusy) return;                 // don't start a new check while the last one is running
+    liveBusy = true;
+    try {
+      const found = await detector.detect(v);
+      if (found.length) onLiveCode(found[0].rawValue);
+    } catch (e) { /* skip this frame */ }
+    liveBusy = false;
+  }, 250);
+}
+
+function stopLive() {
+  clearInterval(liveTimer); liveTimer = null;
+  if (liveStream) liveStream.getTracks().forEach(t => t.stop());
+  liveStream = null;
+  $("liveVideo").srcObject = null;
+  $("camPanel").classList.remove("on");
+  $("camBtn").textContent = "Start camera";
+}
+
+// Called every time the camera sees a barcode. If the same barcode just stays in view,
+// we add it only once. Take it out of view and show it again to add another.
+function onLiveCode(code) {
+  const now = Date.now();
+  const stillInView = code === lastCode && now - lastSeen < 1200;
+  lastCode = code; lastSeen = now;
+  if (stillInView) return;
+  const item = items.find(i => i.barcode && i.barcode === code);
+  if (!item) { $("liveMsg").textContent = "Barcode " + code + " isn't in your items."; return; }
+  if (addItem(item)) {
+    showMsg("");
+    $("liveMsg").textContent = "Added: " + item.name;
+    if (navigator.vibrate) navigator.vibrate(60);
+  }
+}
+
+function showTab(name) {
+  $("itemsView").hidden = name !== "items";
+  $("checkoutView").hidden = name !== "checkout";
+  $("tabItems").classList.toggle("on", name === "items");
+  $("tabCheckout").classList.toggle("on", name === "checkout");
+  $("salesView").hidden = name !== "sales";
+  $("tabSales").classList.toggle("on", name === "sales");
+  if (name === "sales") renderSales();
+  if (name !== "checkout") stopLive();
+  if (name === "checkout") {
+    renderCart();
+    // keep the box ready for a USB/Bluetooth scanner, but don't pop up a phone keyboard
+    if (matchMedia("(pointer: fine)").matches) $("scanInput").focus();
+  }
+}
+
+/* =====================================================
+   6. WIRING BUTTONS TO FUNCTIONS
+   ===================================================== */
+$("addBtn").onclick = () => openForm(null);
+$("saveBtn").onclick = submitForm;
+$("cancelBtn").onclick = () => $("formDlg").close();
+$("scanBtn").onclick = () => startScan(code => { $("fBarcode").value = code; });
+$("scanCancel").onclick = stopScan;
+$("photoBtn").onclick = () => $("photoInput").click();
+$("photoInput").onchange = (e) => readPhoto(e.target.files[0]);
+$("scanDlg").addEventListener("close", stopScan);
+$("search").addEventListener("input", render);
+
+$("finishBtn").onclick = finishSale;
+$("rcptDone").onclick = () => $("receiptDlg").close();
+$("tabSales").onclick = () => showTab("sales");
+$("backupBtn").onclick = openBackup;
+$("copyBtn").onclick = copyBackup;
+$("restoreBtn").onclick = restoreBackup;
+$("backupClose").onclick = () => $("backupDlg").close();
+$("tabItems").onclick = () => showTab("items");
+$("tabCheckout").onclick = () => showTab("checkout");
+$("scanInput").addEventListener("keydown", e => { if (e.key === "Enter") addToCart($("scanInput").value); });
+$("camBtn").onclick = () => (liveStream ? stopLive() : startLive());
+$("cartScanBtn").onclick = () => { stopLive(); startScan(addToCart); };
+$("clearBtn").onclick = () => {
+  if (cart.length) askConfirm("Remove everything from the cart?", "Yes", () => { cart = []; renderCart(); });
+};
+
+render();   // draw the list when the page opens
+</script>
+</body>
+</html>
