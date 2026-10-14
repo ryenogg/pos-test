@@ -116,6 +116,7 @@
     #printView, #printView .sub { color: #000 !important; }
     .ptable th, .ptable td { border-bottom: 1px solid #999 !important; }
   }
+  nav button { padding: 10px 6px; }
 </style>
 </head>
 <body>
@@ -123,6 +124,7 @@
   <button id="tabItems" class="on">Items</button>
   <button id="tabCheckout">Checkout</button>
   <button id="tabSales">Sales</button>
+  <button id="tabExpenses">Expenses</button>
 </nav>
 
 <main id="itemsView">
@@ -181,6 +183,7 @@
   </div>
   <p class="meta" id="profitLine" style="margin:6px 0 0"></p>
   <label>Stock by expiration date * (add a row for each different date)</label>
+  <p class="meta" style="margin:0 0 6px">Each row can have its own supplier price (“Cost each”), for stock bought at a different price. Leave it empty to use the supplier price above.</p>
   <div id="batchList"></div>
   <button id="addDateBtn" type="button">Add another date</button>
   <p class="meta" id="stockTotal" style="margin:8px 0 0"></p>
@@ -195,16 +198,19 @@
   <h1>Sales</h1>
   <p class="sub" id="salesCount"></p>
   <div class="bar" style="margin-bottom:8px">
+    <button id="modeDay" type="button" style="flex:1">Daily</button>
     <button id="modeWeek" type="button" style="flex:1">Weekly</button>
     <button id="modeMonth" type="button" class="primary" style="flex:1">Monthly</button>
   </div>
   <select id="periodSel" aria-label="Choose a period"></select>
   <div id="stats"></div>
   <h2 class="sec" id="chartTitle">Revenue and profit</h2>
-  <p class="meta" style="margin:0 0 6px"><span class="dot" style="background:var(--accent)"></span>Revenue &nbsp;&nbsp; <span class="dot" style="background:var(--chart2)"></span>Profit</p>
+  <p class="meta" style="margin:0 0 6px"><span class="dot" style="background:var(--accent)"></span>Revenue &nbsp;&nbsp; <span class="dot" style="background:var(--chart2)"></span>Net profit</p>
   <div class="chart" id="chart"></div>
   <h2 class="sec">Highest and lowest sales</h2>
   <div id="extremes"></div>
+  <h2 class="sec">Most and least profitable</h2>
+  <div id="profitX"></div>
   <h2 class="sec">Items sold in this period</h2>
   <div id="itemsSold"></div>
   <h2 class="sec">Receipts (tap one to open it)</h2>
@@ -224,6 +230,33 @@
     <button id="backupClose" type="button" class="primary">Close</button>
   </div>
 </dialog>
+
+<main id="expensesView" hidden>
+  <h1>Expenses</h1>
+  <p class="sub">Rent, electricity, delivery fees and other costs. They are subtracted from your profit.</p>
+  <div class="item">
+    <label for="xDate" style="margin-top:0">Date</label>
+    <input id="xDate" type="date">
+    <label for="xCat">Category</label>
+    <select id="xCat" style="margin-bottom:0">
+      <option>Rent</option><option>Electricity</option><option>Water</option><option>Delivery fees</option>
+      <option>Salaries</option><option>Supplies</option><option>Other</option>
+    </select>
+    <label for="xAmt">Amount</label>
+    <input id="xAmt" type="number" inputmode="decimal" min="0" step="0.01">
+    <label for="xNote">Note (optional)</label>
+    <input id="xNote" autocomplete="off">
+    <label for="xSpread">How to count it</label>
+    <select id="xSpread" style="margin-bottom:0">
+      <option value="once">One-time (counts on that date)</option>
+      <option value="month">Monthly (spread evenly over that month)</option>
+    </select>
+    <p class="error" id="xErr"></p>
+    <button id="addExpenseBtn" type="button" class="primary" style="width:100%">Add expense</button>
+  </div>
+  <h2 class="sec" id="xTotal">Expenses</h2>
+  <div id="xList"></div>
+</main>
 
 <main id="printView" hidden>
   <div class="noprint" style="display:flex;gap:8px;margin-bottom:12px">
@@ -293,6 +326,8 @@ function migrateItem(it) {
     it.batches = dates.map((d, n) => ({ date: d, qty: n === 0 ? it.stock : 0 }));   // all stock on the first date
     delete it.expiries;
   }
+  // batches from before cost tracking get the item's supplier price at the time of this update
+  it.batches.forEach(b => { if (typeof b.cost !== "number" && typeof it.cost === "number") b.cost = it.cost; });
   return it;
 }
 
@@ -386,7 +421,7 @@ function render() {
       batches.forEach((b, n) => {
         const days = daysUntil(b.date);
         const span = document.createElement("span");
-        span.textContent = niceDate(b.date) + " (×" + b.qty + ")" +
+        span.textContent = niceDate(b.date) + " (×" + b.qty + (typeof b.cost === "number" ? " @ " + money(b.cost) : "") + ")" +
           (days < 0 ? " expired" : days === 0 ? " today" : days <= 30 ? " " + days + "d left" : "");
         if (days <= 30) span.className = "low";
         exp.append(span);
@@ -423,23 +458,28 @@ function renderBatchInputs() {
   const box = $("batchList");
   box.textContent = "";
   batchRows.forEach((r, n) => {
-    const row = document.createElement("div");
-    row.className = "row"; row.style.marginBottom = "6px";
+    const card = document.createElement("div");
+    card.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px";
     const date = document.createElement("input");
-    date.type = "date"; date.value = r.date;
+    date.type = "date"; date.value = r.date || "";
     date.oninput = date.onchange = () => { r.date = date.value; };
+    const line = document.createElement("div");
+    line.className = "row"; line.style.marginTop = "6px";
     const qty = document.createElement("input");
-    qty.type = "number"; qty.inputMode = "numeric"; qty.min = 0; qty.step = 1; qty.placeholder = "Qty";
-    qty.value = r.qty; qty.style.width = "90px"; qty.style.flex = "none";
+    qty.type = "number"; qty.inputMode = "numeric"; qty.min = 0; qty.step = 1; qty.placeholder = "Qty"; qty.value = r.qty ?? "";
     qty.oninput = () => { r.qty = qty.value; updateStockTotal(); };
+    const cost = document.createElement("input");
+    cost.type = "number"; cost.inputMode = "decimal"; cost.min = 0; cost.step = 0.01; cost.placeholder = "Cost each"; cost.value = r.cost ?? "";
+    cost.oninput = () => { r.cost = cost.value; };
     const del = button("Remove", () => {
       batchRows.splice(n, 1);
-      if (!batchRows.length) batchRows.push({ date: "", qty: "" });
+      if (!batchRows.length) batchRows.push({ date: "", qty: "", cost: "" });
       renderBatchInputs();
     });
     del.className = "danger";
-    row.append(date, qty, del);
-    box.appendChild(row);
+    line.append(qty, cost, del);
+    card.append(date, line);
+    box.appendChild(card);
   });
   updateStockTotal();
 }
@@ -450,8 +490,8 @@ function fillForm(it) {
   $("fBarcode").value = it ? it.barcode : "";
   $("fPrice").value = it ? it.price : "";
   $("fCost").value = it && typeof it.cost === "number" ? it.cost : "";
-  if (it && it.batches && it.batches.length) batchRows = it.batches.map(b => ({ date: b.date, qty: String(b.qty) }));
-  else batchRows = [{ date: "", qty: it && it.stock > 0 ? String(it.stock) : "" }];   // old item: keep its stock, ask for a date
+  if (it && it.batches && it.batches.length) batchRows = it.batches.map(b => ({ date: b.date, qty: String(b.qty), cost: typeof b.cost === "number" ? String(b.cost) : "" }));
+  else batchRows = [{ date: "", qty: it && it.stock > 0 ? String(it.stock) : "", cost: "" }];   // old item: keep its stock, ask for a date
   renderBatchInputs();
   updateProfitLine();
 }
@@ -539,17 +579,22 @@ function submitForm() {
   if (isNaN(price) || price < 0) return fail("Enter a selling price of 0 or more.");
   if (isNaN(cost) || cost < 0) return fail("Enter the supplier price (0 or more).");
 
-  // Combine the date rows (the same date twice adds the quantities together)
-  const byDate = {};
+  // Each row is a batch: an expiration date, how many, and what each one cost
+  const batches = [];
   for (const r of batchRows) {
-    const hasDate = !!r.date, hasQty = String(r.qty).trim() !== "";
+    const hasDate = !!r.date, hasQty = String(r.qty ?? "").trim() !== "";
     if (!hasDate && !hasQty) continue;                       // ignore empty rows
     if (!hasDate) return fail("Pick an expiration date for each quantity.");
     const q = parseInt(r.qty, 10);
     if (!hasQty || isNaN(q) || q < 0) return fail("Enter a quantity (0 or more) for each expiration date.");
-    byDate[r.date] = (byDate[r.date] || 0) + q;
+    let c = cost;                                            // empty = use the supplier price above
+    if (String(r.cost ?? "").trim() !== "") {
+      c = parseFloat(r.cost);
+      if (isNaN(c) || c < 0) return fail("Enter a valid cost for each date, or leave it empty.");
+    }
+    batches.push({ date: r.date, qty: q, cost: c });
   }
-  const batches = Object.keys(byDate).sort().map(d => ({ date: d, qty: byDate[d] }));
+  batches.sort((a, b) => a.date.localeCompare(b.date));
   if (!batches.length) return fail("Add at least one expiration date with its quantity.");
   const stock = batches.reduce((sum, b) => sum + b.qty, 0);   // total stock = all dates added up
 
@@ -779,6 +824,25 @@ function updateChange() {
   else { el.textContent = "Short by " + money(-diff); el.className = "low"; }
 }
 
+// What the units about to be sold actually cost, taking the oldest-expiring batches first.
+// Different batches can have different costs, so a sale's profit uses the batches it really came from.
+function fefoCost(it, qty) {
+  if (!it.batches || !it.batches.length) return typeof it.cost === "number" ? it.cost * qty : null;
+  let left = qty, total = 0;
+  for (const b of it.batches.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+    if (left <= 0) break;
+    const unit = typeof b.cost === "number" ? b.cost : it.cost;
+    if (typeof unit !== "number") return null;
+    const used = Math.min(b.qty, left);
+    total += used * unit; left -= used;
+  }
+  if (left > 0) {                                  // sold more than the batches hold: use the current supplier price
+    if (typeof it.cost !== "number") return null;
+    total += left * it.cost;
+  }
+  return total;
+}
+
 // Sell from the batch that expires first, then the next one, and so on
 function takeStock(it, qty) {
   if (!it.batches || !it.batches.length) { it.stock = Math.max(0, it.stock - qty); return; }   // old item without dates
@@ -798,7 +862,8 @@ function finishSale() {
   // Copy name, barcode and price into the sale, so old receipts stay correct even if prices change later
   const lines = cart.map(l => {
     const it = items.find(i => i.id === l.id);
-    return { id: it.id, name: it.name, barcode: it.barcode, price: it.price, cost: typeof it.cost === "number" ? it.cost : null, qty: l.qty };
+    const cogs = fefoCost(it, l.qty);                 // what these units really cost us
+    return { id: it.id, name: it.name, barcode: it.barcode, price: it.price, cost: cogs === null ? null : cogs / l.qty, qty: l.qty };
   });
   const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
   const no = sales.length ? Math.max(...sales.map(x => x.no)) + 1 : 1;   // receipt number: 1, 2, 3...
@@ -856,7 +921,76 @@ function showReceipt(sale) {
   $("receiptDlg").showModal();
 }
 
-/* ---- Sales tab: weekly/monthly revenue and profit, chart, best sellers, receipts ---- */
+/* ---- Expenses: rent, electricity, delivery fees, and so on ---- */
+const EXPENSES_KEY = "pos_expenses_v1";
+let expenses = loadExpenses();
+function loadExpenses() {
+  try { return JSON.parse(localStorage.getItem(EXPENSES_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveExpenses() {
+  try { localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses)); return true; }
+  catch (e) { return false; }
+}
+
+// How much expense falls between two dates. A "monthly" expense is spread evenly over the days of its month.
+function expenseInRange(start, end) {
+  let total = 0;
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const key = dayKey(d);
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    for (const x of expenses) {
+      if (x.spread === "month") { if (x.date.slice(0, 7) === key.slice(0, 7)) total += x.amount / daysInMonth; }
+      else if (x.date === key) total += x.amount;
+    }
+  }
+  return total;
+}
+
+function addExpense() {
+  const date = $("xDate").value, amount = parseFloat($("xAmt").value);
+  const err = (t) => { $("xErr").textContent = t; };
+  if (!date) return err("Pick a date.");
+  if (isNaN(amount) || amount <= 0) return err("Enter an amount greater than 0.");
+  expenses.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date,
+                  category: $("xCat").value, note: $("xNote").value.trim(), amount: r2(amount), spread: $("xSpread").value });
+  if (!saveExpenses()) { expenses.pop(); return err("Couldn't save. Your browser may be blocking storage."); }
+  $("xAmt").value = ""; $("xNote").value = ""; err("");
+  renderExpenses();
+}
+
+function renderExpenses() {
+  if (!$("xDate").value) $("xDate").value = dayKey(new Date());
+  const now = new Date();
+  const monthTotal = expenseInRange(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  $("xTotal").textContent = "This month: " + money(r2(monthTotal)) + " in expenses";
+  const list = $("xList");
+  list.textContent = "";
+  if (!expenses.length) {
+    const p = document.createElement("p"); p.className = "empty"; p.textContent = "No expenses yet."; list.appendChild(p);
+    return;
+  }
+  for (const x of [...expenses].sort((a, b) => b.date.localeCompare(a.date))) {
+    const row = document.createElement("div"); row.className = "mrow";
+    const left = document.createElement("span");
+    left.textContent = x.category + (x.note ? " · " + x.note : "");
+    const small = document.createElement("small");
+    small.textContent = niceDate(x.date) + (x.spread === "month" ? " · spread over the month" : "");
+    left.appendChild(small);
+    const right = document.createElement("span");
+    right.style.cssText = "display:flex;gap:8px;align-items:center";
+    const amt = document.createElement("strong"); amt.textContent = money(x.amount);
+    const del = button("Delete", () => askConfirm("Delete this " + x.category.toLowerCase() + " expense of " + money(x.amount) + "?", "Delete", () => {
+      expenses = expenses.filter(e => e.id !== x.id); saveExpenses(); renderExpenses();
+    }));
+    del.className = "danger"; del.style.padding = "4px 10px";
+    right.append(amt, del);
+    row.append(left, right);
+    list.appendChild(row);
+  }
+}
+
+/* ---- Sales tab: daily/weekly/monthly revenue and profit, chart, best sellers, receipts ---- */
 let salesMode = "month";     // "week" or "month"
 let salesPeriod = null;      // the period picked in the dropdown (null = the newest one)
 
@@ -865,17 +999,24 @@ const r2 = (n) => Math.round(n * 100) / 100;
 const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const shortDay = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-// Which week or month does a date belong to? Weeks start on Monday.
+// Which day, week or month does a date belong to? Weeks start on Monday.
 function periodOf(date, mode) {
   const d = new Date(date);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (mode === "day") {
+    return { key: dayKey(day), start: day, end: day, short: shortDay(day),
+             label: day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) };
+  }
   if (mode === "month") {
     return { key: d.getFullYear() + "-" + pad(d.getMonth() + 1),
+             start: new Date(d.getFullYear(), d.getMonth(), 1), end: new Date(d.getFullYear(), d.getMonth() + 1, 0),
              label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
              short: d.toLocaleDateString(undefined, { month: "short", year: "numeric" }) };
   }
   const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
   const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
-  return { key: dayKey(start), label: shortDay(start) + " – " + shortDay(end) + ", " + end.getFullYear(), short: shortDay(start) };
+  return { key: dayKey(start), start, end, short: shortDay(start),
+           label: shortDay(start) + " – " + shortDay(end) + ", " + end.getFullYear() };
 }
 
 // Sale lines remember the item's id when they can. Older ones are matched by barcode or name.
@@ -885,30 +1026,38 @@ function lineKey(line) {
   return match ? match.id : (line.barcode || line.name);
 }
 
-// Add up every sale into periods (oldest first): revenue, profit, units, and per-item totals
+// Add up every sale into periods (oldest first): revenue, cost of goods, profit, expenses, per-item totals
 function buildPeriods(mode) {
   const map = {};
+  const get = (date) => {
+    const p = periodOf(date, mode);
+    return map[p.key] || (map[p.key] = { ...p, revenue: 0, cogs: 0, profit: 0, count: 0, units: 0, noCost: false, byItem: {} });
+  };
   for (const sale of sales) {
-    const p = periodOf(sale.date, mode);
-    const e = map[p.key] || (map[p.key] = { ...p, revenue: 0, profit: 0, count: 0, units: 0, noCost: false, byItem: {} });
+    const e = get(sale.date);
     e.revenue += sale.total; e.count++;
     for (const l of sale.lines) {
       const k = lineKey(l);
       const row = e.byItem[k] || (e.byItem[k] = { name: l.name, units: 0, revenue: 0, profit: 0 });
       row.units += l.qty; row.revenue += l.price * l.qty; e.units += l.qty;
-      if (typeof l.cost === "number") { const pr = (l.price - l.cost) * l.qty; row.profit += pr; e.profit += pr; }
-      else e.noCost = true;
+      if (typeof l.cost === "number") {
+        const c = l.cost * l.qty, pr = l.price * l.qty - c;
+        e.cogs += c; e.profit += pr; row.profit += pr;
+      } else e.noCost = true;
     }
   }
-  return Object.keys(map).sort().map(k => map[k]);
+  for (const x of expenses) get(x.date + "T12:00:00");   // periods that only have expenses should show up too
+  const list = Object.keys(map).sort().map(k => map[k]);
+  for (const e of list) { e.expenses = expenseInRange(e.start, e.end); e.net = e.profit - e.expenses; }
+  return list;
 }
 
 function renderChart(periods, cur) {
   const box = $("chart");
   const data = periods.slice(-12);                      // the latest 12 weeks or months
-  $("chartTitle").textContent = "Revenue and profit (last " + data.length + (salesMode === "week" ? " weeks)" : " months)");
-  const maxV = Math.max(1, ...data.map(p => Math.max(p.revenue, p.profit)));
-  const minV = Math.min(0, ...data.map(p => p.profit));
+  $("chartTitle").textContent = "Revenue and net profit (last " + data.length + ({ day: " days)", week: " weeks)", month: " months)" })[salesMode];
+  const maxV = Math.max(1, ...data.map(p => Math.max(p.revenue, p.net)));
+  const minV = Math.min(0, ...data.map(p => p.net));
   const W = Math.max(320, data.length * 64 + 56), H = 200, top = 12, bottom = 36, left = 48;
   const range = maxV - minV, plotH = H - top - bottom;
   const y = (v) => top + (maxV - v) / range * plotH;
@@ -924,7 +1073,7 @@ function renderChart(periods, cur) {
       const y0 = y(Math.max(v, 0)), y1 = y(Math.min(v, 0));
       return `<rect x="${x + dx}" y="${y0}" width="22" height="${Math.max(1, y1 - y0)}" rx="3" fill="${color}"/>`;
     };
-    g += bar(p.revenue, 0, "var(--accent)") + bar(p.profit, 24, "var(--chart2)");
+    g += bar(p.revenue, 0, "var(--accent)") + bar(p.net, 24, "var(--chart2)");
     g += `<text x="${x + 23}" y="${H - bottom + 14}" text-anchor="middle" fill="var(--${p === cur ? "text" : "muted"})" font-size="10" font-weight="${p === cur ? 700 : 400}">${p.short}</text>`;
   });
   box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Revenue and profit per period">${g}</svg>`;
@@ -933,6 +1082,7 @@ function renderChart(periods, cur) {
 
 function renderSales() {
   $("salesCount").textContent = sales.length + (sales.length === 1 ? " sale" : " sales") + " recorded";
+  $("modeDay").className = salesMode === "day" ? "primary" : "";
   $("modeWeek").className = salesMode === "week" ? "primary" : "";
   $("modeMonth").className = salesMode === "month" ? "primary" : "";
 
@@ -946,7 +1096,7 @@ function renderSales() {
   sel.value = salesPeriod || "";
   const cur = periods.find(p => p.key === salesPeriod);
 
-  for (const id of ["stats", "chart", "extremes", "itemsSold"]) $(id).textContent = "";
+  for (const id of ["stats", "chart", "extremes", "profitX", "itemsSold"]) $(id).textContent = "";
 
   if (!cur) {
     const p = document.createElement("p"); p.className = "empty";
@@ -955,11 +1105,13 @@ function renderSales() {
   } else {
     // Totals for the chosen week or month
     const grid = document.createElement("div"); grid.className = "stats";
-    for (const [label, value] of [["Revenue", money(r2(cur.revenue))], ["Profit", money(r2(cur.profit))],
-                                  ["Sales", cur.count], ["Items sold", cur.units]]) {
+    for (const [label, value] of [["Revenue", money(r2(cur.revenue))], ["Cost of goods sold", money(r2(cur.cogs))],
+                                  ["Gross profit", money(r2(cur.profit))], ["Expenses", money(r2(cur.expenses))],
+                                  ["Estimated net profit", money(r2(cur.net))], [cur.count + (cur.count === 1 ? " sale" : " sales"), cur.units + " items sold"]]) {
       const box = document.createElement("div"); box.className = "stat";
       const small = document.createElement("small"); small.textContent = label;
       const strong = document.createElement("strong"); strong.textContent = value;
+      if (label === "Estimated net profit" && cur.net < 0) strong.className = "low";
       box.append(small, strong); grid.appendChild(box);
     }
     $("stats").appendChild(grid);
@@ -968,6 +1120,10 @@ function renderSales() {
       note.textContent = "Profit leaves out sales made before supplier prices were saved.";
       $("stats").appendChild(note);
     }
+
+    const est = document.createElement("p"); est.className = "meta"; est.style.margin = "0";
+    est.textContent = "Net profit is an estimate: gross profit minus expenses. Monthly expenses are spread evenly over the days of the month.";
+    $("stats").appendChild(est);
 
     renderChart(periods, cur);
 
@@ -987,6 +1143,19 @@ function renderSales() {
     };
     if (rows.length && rows[0].units > 0) show("Highest sales", rows[0]);
     if (rows.length > 1) show("Lowest sales", rows[rows.length - 1]);
+
+    // Most and least profitable (gross profit per item, using what each batch really cost)
+    const byProfit = rows.filter(r => r.units > 0).sort((a, b) => b.profit - a.profit);
+    const showProfit = (title, r) => {
+      const row = document.createElement("div"); row.className = "mrow";
+      const left = document.createElement("span"); left.textContent = r.name;
+      const small = document.createElement("small"); small.textContent = title + " · " + r.units + " sold";
+      left.appendChild(small);
+      const right = document.createElement("strong"); right.textContent = money(r2(r.profit));
+      row.append(left, right); $("profitX").appendChild(row);
+    };
+    if (byProfit.length) showProfit("Most profitable", byProfit[0]);
+    if (byProfit.length > 1) showProfit("Least profitable", byProfit[byProfit.length - 1]);
 
     // Everything that sold in this period
     const sold = rows.filter(r => r.units > 0);
@@ -1040,7 +1209,7 @@ function renderPrint() {
 
 /* ---- Backup: your data lives only in this browser, so keep a copy somewhere safe ---- */
 function openBackup() {
-  $("backupText").value = JSON.stringify({ version: 1, items, sales });
+  $("backupText").value = JSON.stringify({ version: 1, items, sales, expenses });
   $("backupMsg").textContent = "";
   $("backupDlg").showModal();
 }
@@ -1064,6 +1233,7 @@ function restoreBackup() {
   if (!ok) { $("backupMsg").textContent = "That doesn't look like a backup from this app. Nothing was changed."; return; }
   askConfirm("Replace all current items and sales with this backup?", "Yes", () => {
     items = data.items.map(migrateItem); sales = data.sales;
+    expenses = Array.isArray(data.expenses) ? data.expenses : []; saveExpenses();
     saveItems(); saveSales();
     cart = [];
     render(); renderSales(); renderCart();
@@ -1136,6 +1306,9 @@ function showTab(name) {
   $("salesView").hidden = name !== "sales";
   $("tabSales").classList.toggle("on", name === "sales");
   if (name === "sales") renderSales();
+  $("expensesView").hidden = name !== "expenses";
+  $("tabExpenses").classList.toggle("on", name === "expenses");
+  if (name === "expenses") renderExpenses();
   $("printView").hidden = name !== "print";
   if (name === "print") renderPrint();
   if (name !== "checkout") stopLive();
@@ -1157,8 +1330,11 @@ $("fBarcode").addEventListener("input", onBarcodeChange);
 $("fName").addEventListener("input", onNameInput);
 $("fPrice").addEventListener("input", updateProfitLine);
 $("fCost").addEventListener("input", updateProfitLine);
-$("addDateBtn").onclick = () => { batchRows.push({ date: "", qty: "" }); renderBatchInputs(); };
+$("addDateBtn").onclick = () => { batchRows.push({ date: "", qty: "", cost: "" }); renderBatchInputs(); };
+$("modeDay").onclick = () => { salesMode = "day"; salesPeriod = null; renderSales(); };
 $("modeWeek").onclick = () => { salesMode = "week"; salesPeriod = null; renderSales(); };
+$("tabExpenses").onclick = () => showTab("expenses");
+$("addExpenseBtn").onclick = addExpense;
 $("modeMonth").onclick = () => { salesMode = "month"; salesPeriod = null; renderSales(); };
 $("periodSel").onchange = () => { salesPeriod = $("periodSel").value; renderSales(); };
 $("printBtn").onclick = () => showTab("print");
