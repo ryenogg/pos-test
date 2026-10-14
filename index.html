@@ -95,6 +95,7 @@
   .cam-off { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa7a2; }
   .cam.on .cam-off { display: none; }
   .cam.on::after { content: ""; position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; background: rgba(255, 90, 90, .85); }
+  .cart-row.flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 </style>
 </head>
 <body>
@@ -133,6 +134,11 @@
   <div class="sugg" id="sugg"></div>
   <div id="cart"></div>
   <div class="total"><span>Total</span><span id="total">0.00</span></div>
+  <div class="bar" style="align-items:center">
+    <label for="received" style="margin:0;white-space:nowrap">Amount received</label>
+    <input id="received" type="number" inputmode="decimal" min="0" step="0.01">
+  </div>
+  <div class="total" style="font-size:1.1rem;padding-top:0"><span>Change</span><span id="changeAmt">—</span></div>
   <button id="finishBtn" type="button" class="primary wide">Finish sale</button>
   <button id="clearBtn" type="button" class="danger wide">Clear cart</button>
 </main>
@@ -187,6 +193,7 @@
   <p class="meta" id="rcptDate"></p>
   <div id="rcptLines"></div>
   <div class="total"><span>Total</span><span id="rcptTotal"></span></div>
+  <div id="rcptPay"></div>
   <div class="form-actions"><button id="rcptDone" type="button" class="primary">Done</button></div>
 </dialog>
 
@@ -222,6 +229,7 @@ const CURRENCY = "";          // e.g. set to "$" or "₱" to show a symbol befor
 const LOW_STOCK = 5;          // stock at or below this is shown in red
 
 let items = loadItems();
+let autoFilledId = null;   // set when a typed/scanned barcode matched an existing item
 let editingId = null;         // null = adding a new item, otherwise the id being edited
 
 function loadItems() {
@@ -304,8 +312,36 @@ function render() {
 /* =====================================================
    3. ADD / EDIT / DELETE
    ===================================================== */
+// Runs whenever the barcode box changes (typed, scanned, or sent by a USB scanner).
+// If the barcode already belongs to an item, show that item so it can be updated instead of duplicated.
+function onBarcodeChange() {
+  const code = $("fBarcode").value.trim();
+
+  // We had auto-filled an item, but the barcode was changed to something else: back to adding a new item
+  if (autoFilledId) {
+    const filled = items.find(i => i.id === autoFilledId);
+    if (!filled || filled.barcode !== code) {
+      editingId = null; autoFilledId = null;
+      $("formTitle").textContent = "Add item";
+      $("fName").value = ""; $("fPrice").value = ""; $("fStock").value = "";
+      $("formError").textContent = "";
+    }
+  }
+  if (editingId || !code) return;
+
+  const existing = items.find(i => i.barcode === code);
+  if (!existing) return;
+  editingId = existing.id; autoFilledId = existing.id;
+  $("formTitle").textContent = "Edit item";
+  $("fName").value = existing.name;
+  $("fPrice").value = existing.price;
+  $("fStock").value = existing.stock;
+  $("formError").textContent = "This barcode already exists, so its details are filled in. Saving will update this item.";
+}
+
 function openForm(id) {
   editingId = id || null;
+  autoFilledId = null;
   const it = items.find(i => i.id === id);
   $("formTitle").textContent = it ? "Edit item" : "Add item";
   $("fName").value = it ? it.name : "";
@@ -419,6 +455,7 @@ function stopScan() {
 /* =====================================================
    5. CHECKOUT – the cart (step 2)
    ===================================================== */
+let lastAddedId = null, cartTotal = 0;
 let cart = [];   // each line: { id: the item's id, qty: how many }
 
 function button(text, fn) {
@@ -452,6 +489,7 @@ function addItem(item) {
     showMsg("Only " + item.stock + " of “" + item.name + "” in stock."); return false;
   }
   if (line) line.qty++; else cart.push({ id: item.id, qty: 1 });
+  lastAddedId = item.id;     // renderCart will scroll to this row
   renderCart();
   return true;
 }
@@ -489,7 +527,7 @@ function renderCart() {
     const item = items.find(i => i.id === line.id);
     total += item.price * line.qty; units += line.qty;
 
-    const row = document.createElement("div"); row.className = "cart-row";
+    const row = document.createElement("div"); row.className = "cart-row"; row.dataset.id = line.id;
     const top = document.createElement("div"); top.className = "cart-top";
     const num = document.createElement("span"); num.className = "num"; num.textContent = (n + 1) + ".";
     const name = document.createElement("span"); name.className = "name"; name.textContent = item.name;
@@ -513,6 +551,19 @@ function renderCart() {
 
   $("cartCount").textContent = units + (units === 1 ? " item" : " items") + " in cart";
   $("total").textContent = money(total);
+  cartTotal = Math.round(total * 100) / 100;
+  updateChange();
+
+  // jump to the row that was just added and flash it so it's easy to spot
+  if (lastAddedId) {
+    const row = [...box.children].find(r => r.dataset && r.dataset.id === lastAddedId);
+    lastAddedId = null;
+    if (row) {
+      row.classList.add("flash");
+      row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setTimeout(() => row.classList.remove("flash"), 1200);
+    }
+  }
 }
 
 /* ---- Sales: every finished sale is saved here (this is what monthly revenue will use) ---- */
@@ -527,6 +578,16 @@ function saveSales() {
   catch (e) { return false; }
 }
 
+// Shows the change (or how much is still owed) under the total
+function updateChange() {
+  const el = $("changeAmt");
+  const v = parseFloat($("received").value);
+  if (isNaN(v)) { el.textContent = "—"; el.className = ""; return; }
+  const diff = Math.round((v - cartTotal) * 100) / 100;
+  if (diff >= 0) { el.textContent = money(diff); el.className = ""; }
+  else { el.textContent = "Short by " + money(-diff); el.className = "low"; }
+}
+
 function finishSale() {
   if (cart.length === 0) { showMsg("Add at least one item before finishing the sale."); return; }
 
@@ -537,7 +598,14 @@ function finishSale() {
   });
   const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
   const no = sales.length ? Math.max(...sales.map(x => x.no)) + 1 : 1;   // receipt number: 1, 2, 3...
-  const sale = { no, date: new Date().toISOString(), lines, total };
+  // Money given by the customer. If the box is empty, we treat it as the exact amount.
+  let received = parseFloat($("received").value);
+  if (isNaN(received)) received = total;
+  if (Math.round(received * 100) < Math.round(total * 100)) {
+    showMsg("The amount received is less than the total."); return;
+  }
+  const change = Math.round((received - total) * 100) / 100;
+  const sale = { no, date: new Date().toISOString(), lines, total, received, change };
 
   sales.push(sale);
   if (!saveSales()) { sales.pop(); showMsg("Couldn't save the sale. Nothing was changed."); return; }
@@ -546,6 +614,7 @@ function finishSale() {
   saveItems();
   cart = [];
   showMsg("");
+  $("received").value = "";
   renderCart();
   render();            // refresh the Items list so the new stock shows
   showReceipt(sale);
@@ -569,6 +638,17 @@ function showReceipt(sale) {
     box.appendChild(row);
   });
   $("rcptTotal").textContent = money(sale.total);
+  const pay = $("rcptPay");
+  pay.textContent = "";
+  if (typeof sale.received === "number") {          // older sales don't have these
+    for (const [label, value] of [["Amount received", sale.received], ["Change", sale.change]]) {
+      const r = document.createElement("div"); r.className = "rline";
+      const a = document.createElement("span"); a.textContent = label;
+      const b = document.createElement("span"); b.textContent = money(value);
+      r.append(a, b);
+      pay.appendChild(r);
+    }
+  }
   $("receiptDlg").showModal();
 }
 
@@ -738,7 +818,9 @@ function showTab(name) {
 $("addBtn").onclick = () => openForm(null);
 $("saveBtn").onclick = submitForm;
 $("cancelBtn").onclick = () => $("formDlg").close();
-$("scanBtn").onclick = () => startScan(code => { $("fBarcode").value = code; });
+$("scanBtn").onclick = () => startScan(code => { $("fBarcode").value = code; onBarcodeChange(); });
+$("fBarcode").addEventListener("input", onBarcodeChange);
+$("received").addEventListener("input", updateChange);
 $("scanCancel").onclick = stopScan;
 $("photoBtn").onclick = () => $("photoInput").click();
 $("photoInput").onchange = (e) => readPhoto(e.target.files[0]);
