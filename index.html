@@ -146,17 +146,24 @@
 <!-- Add / edit form -->
 <dialog id="formDlg">
   <h2 id="formTitle" style="margin:0 0 4px">Add item</h2>
-  <label for="fName">Name</label>
+  <label for="fName">Name *</label>
   <input id="fName" autocomplete="off">
-  <label for="fBarcode">Barcode</label>
+  <div class="sugg" id="nameSugg" style="margin:8px 0 0"></div>
+  <label for="fBarcode">Barcode (optional)</label>
   <div class="row">
     <input id="fBarcode" inputmode="numeric" autocomplete="off" placeholder="Scan or type">
     <button id="scanBtn" type="button">Scan</button>
   </div>
   <div class="row">
-    <div><label for="fPrice">Price</label><input id="fPrice" type="number" inputmode="decimal" min="0" step="0.01"></div>
-    <div><label for="fStock">Stock</label><input id="fStock" type="number" inputmode="numeric" min="0" step="1"></div>
+    <div><label for="fPrice">Selling price *</label><input id="fPrice" type="number" inputmode="decimal" min="0" step="0.01"></div>
+    <div><label for="fCost">Supplier price *</label><input id="fCost" type="number" inputmode="decimal" min="0" step="0.01"></div>
   </div>
+  <p class="meta" id="profitLine" style="margin:6px 0 0"></p>
+  <label for="fStock">Stock *</label>
+  <input id="fStock" type="number" inputmode="numeric" min="0" step="1">
+  <label>Expiration dates * (add more if the stock has different dates)</label>
+  <div id="expiryList"></div>
+  <button id="addDateBtn" type="button">Add another date</button>
   <p class="error" id="formError"></p>
   <div class="form-actions">
     <button id="cancelBtn" type="button">Cancel</button>
@@ -225,7 +232,7 @@
       We save it in the browser so it survives refreshes.
    ===================================================== */
 const STORAGE_KEY = "pos_items_v1";
-const CURRENCY = "";          // e.g. set to "$" or "₱" to show a symbol before prices
+const CURRENCY = "₱";          // e.g. set to "$" or "₱" to show a symbol before prices
 const LOW_STOCK = 5;          // stock at or below this is shown in red
 
 let items = loadItems();
@@ -245,7 +252,7 @@ function saveItems() {
    2. SHOWING THE LIST
    ===================================================== */
 const $ = (id) => document.getElementById(id);
-const money = (n) => CURRENCY + Number(n).toFixed(2);
+const money = (n) => (n < 0 ? "-" : "") + CURRENCY + Math.abs(Number(n)).toFixed(2);
 
 // Our own "Are you sure?" popup. Shows the question; runs onYes only if they confirm.
 function askConfirm(text, yesLabel, onYes) {
@@ -254,6 +261,14 @@ function askConfirm(text, yesLabel, onYes) {
   $("confirmYes").onclick = () => { $("confirmDlg").close(); onYes(); };
   $("confirmNo").onclick = () => $("confirmDlg").close();
   $("confirmDlg").showModal();
+}
+
+// ---- date helpers (dates are stored as text like "2026-11-30") ----
+function parseDate(d) { const [y, m, day] = d.split("-").map(Number); return new Date(y, m - 1, day); }
+function niceDate(d) { return parseDate(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+function daysUntil(d) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((parseDate(d) - today) / 86400000);
 }
 
 function render() {
@@ -294,6 +309,33 @@ function render() {
     if (it.stock <= LOW_STOCK) stock.className = "low";
     meta.append(stock, document.createTextNode("  ·  Barcode: " + (it.barcode || "none")));
 
+    // supplier price + profit
+    const extra = document.createElement("div"); extra.className = "meta";
+    if (typeof it.cost === "number") {
+      const profit = Math.round((it.price - it.cost) * 100) / 100;
+      const margin = it.price > 0 ? Math.round(profit / it.price * 1000) / 10 : 0;
+      extra.textContent = "Supplier price: " + money(it.cost) + "  ·  Profit: " + money(profit) + " each (" + margin + "%)";
+    } else {
+      extra.textContent = "Supplier price not set. Tap Edit to add it.";
+    }
+
+    // expiration dates (red when expired or within 30 days)
+    const exp = document.createElement("div"); exp.className = "meta";
+    const dates = (it.expiries || []).slice().sort();
+    if (!dates.length) {
+      exp.textContent = "Expiration date not set. Tap Edit to add it.";
+    } else {
+      exp.append("Expires: ");
+      dates.forEach((d, n) => {
+        const days = daysUntil(d);
+        const span = document.createElement("span");
+        span.textContent = niceDate(d) + (days < 0 ? " (expired)" : days === 0 ? " (today)" : days <= 30 ? " (" + days + "d left)" : "");
+        if (days <= 30) span.className = "low";
+        exp.append(span);
+        if (n < dates.length - 1) exp.append(", ");
+      });
+    }
+
     const actions = document.createElement("div");
     actions.className = "actions";
     const edit = document.createElement("button");
@@ -304,7 +346,7 @@ function render() {
     del.onclick = () => deleteItem(it.id);
     actions.append(edit, del);
 
-    card.append(top, meta, actions);
+    card.append(top, meta, extra, exp, actions);
     list.appendChild(card);
   }
 }
@@ -312,31 +354,99 @@ function render() {
 /* =====================================================
    3. ADD / EDIT / DELETE
    ===================================================== */
+let expiryDates = [];   // the dates shown in the form, e.g. ["2026-11-30", ""]
+
+function renderExpiryInputs() {
+  const box = $("expiryList");
+  box.textContent = "";
+  expiryDates.forEach((d, n) => {
+    const row = document.createElement("div");
+    row.className = "row"; row.style.marginBottom = "6px";
+    const input = document.createElement("input");
+    input.type = "date"; input.value = d;
+    input.oninput = input.onchange = () => { expiryDates[n] = input.value; };
+    const del = button("Remove", () => {
+      expiryDates.splice(n, 1);
+      if (!expiryDates.length) expiryDates.push("");
+      renderExpiryInputs();
+    });
+    del.className = "danger";
+    row.append(input, del);
+    box.appendChild(row);
+  });
+}
+
+// Puts an item's details into the form boxes (or empties them when given nothing)
+function fillForm(it) {
+  $("fName").value = it ? it.name : "";
+  $("fBarcode").value = it ? it.barcode : "";
+  $("fPrice").value = it ? it.price : "";
+  $("fCost").value = it && typeof it.cost === "number" ? it.cost : "";
+  $("fStock").value = it ? it.stock : "";
+  expiryDates = it && it.expiries && it.expiries.length ? [...it.expiries] : [""];
+  renderExpiryInputs();
+  updateProfitLine();
+}
+
+// Live "profit per unit" under the price boxes
+function updateProfitLine() {
+  const price = parseFloat($("fPrice").value), cost = parseFloat($("fCost").value);
+  const el = $("profitLine");
+  if (isNaN(price) || isNaN(cost)) { el.textContent = ""; return; }
+  const profit = Math.round((price - cost) * 100) / 100;
+  const margin = price > 0 ? Math.round(profit / price * 1000) / 10 : 0;
+  el.textContent = "Profit per unit: " + money(profit) + " (" + margin + "% of the selling price)";
+}
+
+// Switch the form over to an item that already exists, so it gets updated instead of duplicated
+function useExisting(it, note, fromBarcode) {
+  editingId = it.id;
+  autoFilledId = fromBarcode ? it.id : null;
+  $("formTitle").textContent = "Edit item";
+  fillForm(it);
+  $("nameSugg").textContent = "";
+  $("formError").textContent = note;
+}
+
+// While typing a name: suggest existing items with the same words, with their prices
+function onNameInput() {
+  const box = $("nameSugg");
+  box.textContent = "";
+  const q = $("fName").value.trim().toLowerCase();
+  if (editingId || q.length < 2) return;
+  const matches = items.filter(i => i.name.toLowerCase().includes(q)).slice(0, 5);
+  if (!matches.length) return;
+  const note = document.createElement("p");
+  note.className = "meta"; note.style.cssText = "width:100%;margin:0";
+  note.textContent = "Already in your items. Tap one to edit it:";
+  box.appendChild(note);
+  for (const it of matches) {
+    box.appendChild(button(it.name + " – " + money(it.price),
+      () => useExisting(it, "This item already exists. Change what you need and save to update it.", false)));
+  }
+}
+
 // Runs whenever the barcode box changes (typed, scanned, or sent by a USB scanner).
 // If the barcode already belongs to an item, show that item so it can be updated instead of duplicated.
 function onBarcodeChange() {
   const code = $("fBarcode").value.trim();
 
-  // We had auto-filled an item, but the barcode was changed to something else: back to adding a new item
+  // We had filled in an item from its barcode, but the barcode was changed: back to adding a new item
   if (autoFilledId) {
     const filled = items.find(i => i.id === autoFilledId);
     if (!filled || filled.barcode !== code) {
+      const typed = $("fBarcode").value;
       editingId = null; autoFilledId = null;
       $("formTitle").textContent = "Add item";
-      $("fName").value = ""; $("fPrice").value = ""; $("fStock").value = "";
+      fillForm(null);
+      $("fBarcode").value = typed;
       $("formError").textContent = "";
     }
   }
   if (editingId || !code) return;
 
   const existing = items.find(i => i.barcode === code);
-  if (!existing) return;
-  editingId = existing.id; autoFilledId = existing.id;
-  $("formTitle").textContent = "Edit item";
-  $("fName").value = existing.name;
-  $("fPrice").value = existing.price;
-  $("fStock").value = existing.stock;
-  $("formError").textContent = "This barcode already exists, so its details are filled in. Saving will update this item.";
+  if (existing) useExisting(existing, "This barcode already exists, so its details are filled in. Saving will update this item.", true);
 }
 
 function openForm(id) {
@@ -344,10 +454,8 @@ function openForm(id) {
   autoFilledId = null;
   const it = items.find(i => i.id === id);
   $("formTitle").textContent = it ? "Edit item" : "Add item";
-  $("fName").value = it ? it.name : "";
-  $("fBarcode").value = it ? it.barcode : "";
-  $("fPrice").value = it ? it.price : "";
-  $("fStock").value = it ? it.stock : "";
+  fillForm(it);
+  $("nameSugg").textContent = "";
   $("formError").textContent = "";
   $("formDlg").showModal();
 }
@@ -356,21 +464,25 @@ function submitForm() {
   const name = $("fName").value.trim();
   const barcode = $("fBarcode").value.trim();
   const price = parseFloat($("fPrice").value);
+  const cost = parseFloat($("fCost").value);
   const stock = parseInt($("fStock").value, 10);
+  const expiries = [...new Set(expiryDates.filter(d => d))].sort();   // drop blanks and repeats
 
-  // Check the input before saving, and tell the user exactly what to fix
+  // Required: name, selling price, supplier price, stock, and at least one expiration date
   if (!name) return fail("Enter a name for the item.");
-  if (isNaN(price) || price < 0) return fail("Enter a price of 0 or more.");
+  if (isNaN(price) || price < 0) return fail("Enter a selling price of 0 or more.");
+  if (isNaN(cost) || cost < 0) return fail("Enter the supplier price (0 or more).");
   if (isNaN(stock) || stock < 0) return fail("Enter a stock count of 0 or more.");
+  if (!expiries.length) return fail("Add at least one expiration date.");
   if (barcode && items.some(i => i.barcode === barcode && i.id !== editingId))
     return fail("Another item already uses this barcode.");
 
   if (editingId) {
     const it = items.find(i => i.id === editingId);
-    Object.assign(it, { name, barcode, price, stock });
+    Object.assign(it, { name, barcode, price, cost, stock, expiries });
   } else {
     items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                 name, barcode, price, stock });
+                 name, barcode, price, cost, stock, expiries });
   }
   saveItems();
   $("formDlg").close();
@@ -594,7 +706,7 @@ function finishSale() {
   // Copy name, barcode and price into the sale, so old receipts stay correct even if prices change later
   const lines = cart.map(l => {
     const it = items.find(i => i.id === l.id);
-    return { name: it.name, barcode: it.barcode, price: it.price, qty: l.qty };
+    return { name: it.name, barcode: it.barcode, price: it.price, cost: typeof it.cost === "number" ? it.cost : null, qty: l.qty };
   });
   const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
   const no = sales.length ? Math.max(...sales.map(x => x.no)) + 1 : 1;   // receipt number: 1, 2, 3...
@@ -820,6 +932,10 @@ $("saveBtn").onclick = submitForm;
 $("cancelBtn").onclick = () => $("formDlg").close();
 $("scanBtn").onclick = () => startScan(code => { $("fBarcode").value = code; onBarcodeChange(); });
 $("fBarcode").addEventListener("input", onBarcodeChange);
+$("fName").addEventListener("input", onNameInput);
+$("fPrice").addEventListener("input", updateProfitLine);
+$("fCost").addEventListener("input", updateProfitLine);
+$("addDateBtn").onclick = () => { expiryDates.push(""); renderExpiryInputs(); };
 $("received").addEventListener("input", updateChange);
 $("scanCancel").onclick = stopScan;
 $("photoBtn").onclick = () => $("photoInput").click();
