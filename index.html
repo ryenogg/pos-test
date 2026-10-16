@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Shop POS – Items</title>
+<title>Shop POS</title>
+<meta name="theme-color" content="#0f6b5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   /* ---------- COLORS: change these and the whole app changes ---------- */
   :root {
@@ -126,23 +130,71 @@
   .big { width: 100%; padding: 18px 16px; margin-bottom: 10px; text-align: left; font-size: 1.1rem; font-weight: 600; }
   .big small { display: block; font-weight: 400; opacity: .85; margin-top: 2px; font-size: .9rem; }
   .selfie { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; display: block; margin: 0 auto 10px; border: 1px solid var(--line); }
+  .net { font-size: .85rem; color: var(--muted); }
+  .net.off { color: var(--chart2); font-weight: 600; }
+  /* ---- top bar + side menu ---- */
+  #topbar { position: sticky; top: 0; z-index: 30; max-width: none; margin: 0; padding: 10px 16px; gap: 10px;
+            justify-content: flex-start; background: var(--bg); border-bottom: 1px solid var(--line); }
+  #topbar button { padding: 4px 12px; font-size: 1.3rem; line-height: 1.2; }
+  #pageTitle { flex: 1; font-size: 1.1rem; }
+  #menuBackdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; }
+  #sideMenu { position: fixed; top: 0; bottom: 0; left: 0; width: min(82vw, 300px); z-index: 50; overflow-y: auto;
+              background: var(--surface); border-right: 1px solid var(--line);
+              padding: calc(env(safe-area-inset-top, 0px) + 14px) 12px 16px; display: flex; flex-direction: column; gap: 2px;
+              visibility: hidden; transform: translateX(-100%); transition: transform .2s ease, visibility .2s; }
+  #sideMenu.open { visibility: visible; transform: none; }
+  #sideMenu .mi { text-align: left; width: 100%; border: 0; background: transparent; padding: 12px; font-size: 1rem; }
+  #sideMenu .mi.on { background: var(--bg); color: var(--accent); font-weight: 700; }
+  #sideMenu hr { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 8px 0; }
 </style>
 </head>
 <body>
 <div id="topbar" hidden>
-  <strong id="who"></strong>
-  <button id="logoutBtn" type="button">Log out</button>
+  <button id="menuBtn" type="button" aria-label="Open menu" aria-expanded="false">☰</button>
+  <button id="homeBtn" type="button" aria-label="Home">⌂</button>
+  <strong id="pageTitle"></strong>
+  <span id="netDot" class="net" title="">●</span>
 </div>
 
-<nav id="nav" hidden>
-  <button id="tabItems" class="on">Items</button>
-  <button id="tabCheckout">Checkout</button>
-  <button id="tabRefunds">Refunds</button>
-  <button id="tabSales">Sales</button>
-  <button id="tabExpenses">Expenses</button>
-  <button id="tabStaff">Cashier</button>
-  <button id="tabDrawer">Drawer</button>
-</nav>
+<div id="menuBackdrop" hidden></div>
+<aside id="sideMenu" aria-label="Menu">
+  <div style="padding:4px 12px 10px"><strong id="who"></strong><div id="netTop" class="net"></div></div>
+  <button id="tabHome" type="button" class="mi">Home</button>
+  <button id="tabItems" type="button" class="mi">Items</button>
+  <button id="tabCheckout" type="button" class="mi">Checkout</button>
+  <button id="tabRefunds" type="button" class="mi">Refunds</button>
+  <button id="tabSales" type="button" class="mi">Sales</button>
+  <button id="tabExpenses" type="button" class="mi">Expenses</button>
+  <button id="tabStaff" type="button" class="mi">Staff</button>
+  <button id="tabDrawer" type="button" class="mi">Cash drawer</button>
+  <hr>
+  <button id="logoutBtn" type="button" class="mi">Log out</button>
+</aside>
+
+<main id="dashboardView" hidden>
+  <h1 id="dashDate" style="font-size:1.2rem"></h1>
+  <div class="bar" style="margin-bottom:8px">
+    <button id="dashDay" type="button" style="flex:1">Today</button>
+    <button id="dashWeek" type="button" style="flex:1">This week</button>
+    <button id="dashMonth" type="button" class="primary" style="flex:1">This month</button>
+  </div>
+  <p class="meta" id="dashPeriod" style="margin:0 0 8px"></p>
+  <div id="dashStats"></div>
+  <h2 class="sec" id="dashChartTitle">Revenue and net profit</h2>
+  <p class="meta" style="margin:0 0 6px"><span class="dot" style="background:var(--accent)"></span>Revenue &nbsp;&nbsp; <span class="dot" style="background:var(--chart2)"></span>Net profit</p>
+  <div class="chart" id="dashChart"></div>
+  <button id="dashReport" type="button" class="wide" style="margin-top:10px">See the full sales report</button>
+  <h2 class="sec">Needs attention</h2>
+  <button id="dashLow" type="button" class="wide"></button>
+  <button id="dashExpiry" type="button" class="wide"></button>
+</main>
+
+<main id="alertsView" hidden>
+  <h1 id="alertTitle"></h1>
+  <p class="sub" id="alertSub"></p>
+  <div id="alertList"></div>
+  <button id="alertBack" type="button" class="wide">Back to home</button>
+</main>
 
 <main id="itemsView">
   <h1>Items</h1>
@@ -265,8 +317,10 @@
 </dialog>
 
 <main id="homeView" hidden>
-  <h1 style="text-align:center;margin-top:24px">Login</h1>
+  <h1 style="text-align:center;margin-top:24px">Shop POS</h1>
   <p class="sub" id="homeMsg" style="text-align:center"></p>
+  <p id="netHome" class="net" style="text-align:center;margin:0 0 12px"></p>
+  <button id="installBtn" type="button" hidden style="display:block;margin:0 auto 12px">Install app on this device</button>
 
   <div id="hChoice">
     <button id="hOwner" type="button" class="big primary">Owner login<small>Full access: reports, products, staff, cash drawer</small></button>
@@ -803,6 +857,7 @@ function submitForm() {
   saveItems();
   $("formDlg").close();
   render();
+  if (!$("alertsView").hidden) renderAlerts();
 }
 function fail(msg) { $("formError").textContent = msg; }
 
@@ -1268,6 +1323,7 @@ function showHome(msg) {
 
 function applyRole() {
   $("who").textContent = isOwner() ? "Owner" : "Cashier: " + session.name;
+  $("tabHome").hidden = !isOwner();     // a cashier's home is the checkout
   for (const id of ["tabItems", "tabSales", "tabExpenses", "tabStaff"]) $(id).hidden = !isOwner();
   $("tabRefunds").hidden = !canRefund();
 }
@@ -1291,7 +1347,7 @@ async function doSetup() {
   for (const id of ["suPw", "suPw2", "suPin", "suPin2"]) $(id).value = "";
   err("");
   session = { role: "owner" };
-  applyRole(); showTab("items");
+  applyRole(); showTab("dashboard");
 }
 
 function setOwnerMode(m) {
@@ -1320,7 +1376,7 @@ async function doOwnerLogin() {
   }
   failCount = 0; msg("");
   session = { role: "owner" };
-  applyRole(); showTab("items");
+  applyRole(); showTab("dashboard");
 }
 
 // ----- cashier: pick a registered profile, take a selfie, enter opening cash -----
@@ -1886,10 +1942,10 @@ function buildPeriods(mode) {
   return list;
 }
 
-function renderChart(periods, cur) {
-  const box = $("chart");
+function renderChart(periods, cur, boxId = "chart", titleId = "chartTitle", mode = salesMode) {
+  const box = $(boxId);
   const data = periods.slice(-12);                      // the latest 12 weeks or months
-  $("chartTitle").textContent = "Revenue and net profit (last " + data.length + ({ day: " days)", week: " weeks)", month: " months)" })[salesMode];
+  $(titleId).textContent = "Revenue and net profit (last " + data.length + ({ day: " days)", week: " weeks)", month: " months)" })[mode];
   const maxV = Math.max(1, ...data.map(p => Math.max(p.revenue, p.net)));
   const minV = Math.min(0, ...data.map(p => p.net));
   const W = Math.max(320, data.length * 64 + 56), H = 200, top = 12, bottom = 36, left = 48;
@@ -2148,7 +2204,16 @@ function showTab(name) {
     if (session) applyRole();     // permissions can change while someone is logged in
   }
   $("homeView").hidden = name !== "home";
-  $("nav").hidden = $("topbar").hidden = name === "home";
+  $("topbar").hidden = name === "home";
+  closeMenu();
+  const titles = { dashboard: "Home", alerts: "Stock alerts", items: "Items", checkout: "Checkout", refunds: "Refunds", sales: "Sales",
+                   expenses: "Expenses", staff: "Staff", drawer: "Cash drawer", print: "Price list" };
+  $("pageTitle").textContent = titles[name] || "";
+  $("dashboardView").hidden = name !== "dashboard";
+  $("tabHome").classList.toggle("on", name === "dashboard" || name === "alerts");
+  if (name === "dashboard") renderDashboard();
+  $("alertsView").hidden = name !== "alerts";
+  if (name === "alerts") renderAlerts();
   $("staffView").hidden = name !== "staff";
   $("tabStaff").classList.toggle("on", name === "staff");
   if (name === "staff") renderStaff();
@@ -2238,6 +2303,18 @@ $("hStartShift").onclick = doStartShift;
 $("hResumeBtn").onclick = resumeShift;
 $("logoutBtn").onclick = () => logout();
 $("tabStaff").onclick = () => showTab("staff");
+$("menuBtn").onclick = () => ($("sideMenu").classList.contains("open") ? closeMenu() : openMenu());
+$("menuBackdrop").onclick = closeMenu;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+$("homeBtn").onclick = goHome;
+$("tabHome").onclick = goHome;
+$("dashDay").onclick = () => { dashMode = "day"; renderDashboard(); };
+$("dashWeek").onclick = () => { dashMode = "week"; renderDashboard(); };
+$("dashMonth").onclick = () => { dashMode = "month"; renderDashboard(); };
+$("dashReport").onclick = () => { salesMode = dashMode; salesPeriod = null; showTab("sales"); };
+$("dashLow").onclick = () => { alertMode = "low"; showTab("alerts"); };
+$("dashExpiry").onclick = () => { alertMode = "expiry"; showTab("alerts"); };
+$("alertBack").onclick = goHome;
 $("tabRefunds").onclick = () => showTab("refunds");
 $("startOwnerShiftBtn").onclick = startOwnerShift;
 $("payCash").onclick = () => setPayMethod("cash");
@@ -2250,6 +2327,131 @@ $("changePinBtn").onclick = () => changeSecret("pin");
 $("changePassBtn").onclick = () => changeSecret("pass");
 
 render();   // draw the list when the page opens
+/* ---- Home: sales summary, chart, and things that need attention ---- */
+let dashMode = "month";     // "day", "week" or "month"
+let alertMode = "low";      // "low" or "expiry"
+const EXPIRY_DAYS = 30;     // stock expiring within this many days counts as "expiring soon"
+
+const lowStockItems = () => items.filter(i => i.stock <= LOW_STOCK).sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
+function expiringBatches() {
+  const out = [];
+  for (const it of items) for (const b of (it.batches || [])) {
+    if (b.qty > 0) { const days = daysUntil(b.date); if (days <= EXPIRY_DAYS) out.push({ it, b, days }); }
+  }
+  return out.sort((x, y) => x.days - y.days);
+}
+
+function renderDashboard() {
+  const now = new Date();
+  $("dashDate").textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  for (const [id, m] of [["dashDay", "day"], ["dashWeek", "week"], ["dashMonth", "month"]]) $(id).className = dashMode === m ? "primary" : "";
+
+  const periods = buildPeriods(dashMode);
+  const p = periodOf(now, dashMode);
+  let cur = periods.find(x => x.key === p.key);
+  if (!cur) {                                          // nothing sold yet in this period
+    const exp = expenseInRange(p.start, p.end);
+    cur = { ...p, revenue: 0, cogs: 0, profit: 0, count: 0, units: 0, expenses: exp, net: -exp, noCost: false, refundTotal: 0, refundCount: 0, byItem: {} };
+    periods.push(cur);
+  }
+  $("dashPeriod").textContent = ({ day: "Today", week: "This week", month: "This month" })[dashMode] + " · " + cur.label;
+
+  const box = $("dashStats");
+  box.textContent = "";
+  const grid = document.createElement("div"); grid.className = "stats";
+  for (const [label, value] of [["Revenue", money(r2(cur.revenue))], ["Cost of goods sold", money(r2(cur.cogs))],
+                                ["Gross profit", money(r2(cur.profit))], ["Expenses", money(r2(cur.expenses))],
+                                ["Estimated net profit", money(r2(cur.net))], [cur.count + (cur.count === 1 ? " sale" : " sales"), cur.units + " items sold"]]) {
+    const cell = makeStat(label, value);
+    if (label === "Estimated net profit" && cur.net < 0) cell.querySelector("strong").className = "low";
+    grid.appendChild(cell);
+  }
+  box.appendChild(grid);
+  if (cur.refundCount) {
+    const rn = document.createElement("p"); rn.className = "meta"; rn.style.margin = "0";
+    rn.textContent = "Includes " + cur.refundCount + " refund" + (cur.refundCount === 1 ? "" : "s") + " totaling " + money(r2(cur.refundTotal)) + ".";
+    box.appendChild(rn);
+  }
+  renderChart(periods, cur, "dashChart", "dashChartTitle", dashMode);
+
+  const low = lowStockItems().length;
+  $("dashLow").textContent = low ? "⚠ " + low + (low === 1 ? " product is" : " products are") + " low on stock" : "✓ No products are low on stock";
+  $("dashLow").className = "wide" + (low ? " danger" : "");
+  const soon = new Set(expiringBatches().map(x => x.it.id)).size;
+  $("dashExpiry").textContent = soon ? "⚠ " + soon + (soon === 1 ? " product has" : " products have") + " expired or expire within " + EXPIRY_DAYS + " days" : "✓ Nothing is expiring in the next " + EXPIRY_DAYS + " days";
+  $("dashExpiry").className = "wide" + (soon ? " danger" : "");
+}
+
+function alertCard(it, status, detail) {
+  const card = document.createElement("div"); card.className = "item";
+  const top = document.createElement("div"); top.className = "item-top";
+  const name = document.createElement("span"); name.className = "name"; name.textContent = it.name;
+  const st = document.createElement("span"); st.className = "low"; st.textContent = status;
+  top.append(name, st);
+  const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = detail;
+  const actions = document.createElement("div"); actions.className = "actions";
+  actions.appendChild(button("Edit item", () => openForm(it.id)));
+  card.append(top, meta, actions);
+  return card;
+}
+
+function renderAlerts() {
+  const list = $("alertList");
+  list.textContent = "";
+  const empty = (t) => { const e = document.createElement("p"); e.className = "empty"; e.textContent = t; list.appendChild(e); };
+  if (alertMode === "low") {
+    $("alertTitle").textContent = "Low on stock";
+    $("alertSub").textContent = "Products with " + LOW_STOCK + " or fewer left. Tap Edit item to restock.";
+    const low = lowStockItems();
+    if (!low.length) empty("Nothing is low on stock.");
+    for (const it of low) list.appendChild(alertCard(it, it.stock === 0 ? "Out of stock" : it.stock + " left", "Selling price " + money(it.price) + (typeof it.cost === "number" ? " · supplier price " + money(it.cost) : "")));
+  } else {
+    $("alertTitle").textContent = "Expiring soon";
+    $("alertSub").textContent = "Stock that has expired or expires within " + EXPIRY_DAYS + " days, soonest first.";
+    const soon = expiringBatches();
+    if (!soon.length) empty("Nothing is expiring soon.");
+    for (const { it, b, days } of soon) {
+      list.appendChild(alertCard(it, days < 0 ? "Expired " + (-days) + "d ago" : days === 0 ? "Expires today" : days + " days left",
+                                 niceDate(b.date) + " · ×" + b.qty + " in stock"));
+    }
+  }
+}
+
+/* ---- Side menu ---- */
+function openMenu() { $("sideMenu").classList.add("open"); $("menuBackdrop").hidden = false; $("menuBtn").setAttribute("aria-expanded", "true"); }
+function closeMenu() { $("sideMenu").classList.remove("open"); $("menuBackdrop").hidden = true; $("menuBtn").setAttribute("aria-expanded", "false"); }
+const goHome = () => showTab(isOwner() ? "dashboard" : "checkout");
+
+/* ---- Offline and install support ---- */
+// Until server sync exists, everything is saved on this device only, and the badge says so.
+const netText = () => (navigator.onLine ? "● Online" : "● Offline") + " · saved on this device only";
+function updateNetStatus() {
+  for (const id of ["netHome", "netTop"]) {
+    $(id).textContent = netText();
+    $(id).classList.toggle("off", !navigator.onLine);
+  }
+}
+function updateNetDot() { $("netDot").className = "net" + (navigator.onLine ? "" : " off"); $("netDot").title = netText(); }
+window.addEventListener("online", updateNetDot);
+window.addEventListener("offline", updateNetDot);
+updateNetDot();
+window.addEventListener("online", updateNetStatus);
+window.addEventListener("offline", updateNetStatus);
+updateNetStatus();
+
+// "Install app" button (Chrome offers this when the page is hosted and installable)
+let deferredInstall = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; $("installBtn").hidden = false; });
+window.addEventListener("appinstalled", () => { $("installBtn").hidden = true; });
+$("installBtn").onclick = () => { if (!deferredInstall) return; deferredInstall.prompt(); deferredInstall = null; $("installBtn").hidden = true; };
+
+// The service worker keeps a copy of the app on the device so it opens with no internet
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* not available here (for example inside a preview frame) */ });
+}
+// Ask the browser not to clear this app's saved data when the phone is low on space
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* not supported */ }
+
 ensureDailyPins();
 saveShifts();   // also clears any old selfies from storage
 showHome(); // everyone starts at the home screen
