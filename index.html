@@ -2421,10 +2421,10 @@ function renderAlerts() {
 /* ---- Side menu ---- */
 function openMenu() { $("sideMenu").classList.add("open"); $("menuBackdrop").hidden = false; $("menuBtn").setAttribute("aria-expanded", "true"); }
 function closeMenu() { $("sideMenu").classList.remove("open"); $("menuBackdrop").hidden = true; $("menuBtn").setAttribute("aria-expanded", "false"); }
-const goHome = () => showTab(isOwner() ? "dashboard" : "checkout");
+function goHome() { showTab(isOwner() ? "dashboard" : "checkout"); }
 
 /* ---- Offline and install support ---- */
-const APP_VERSION = "3";     // change this number when you upload a new copy, so you can tell which one is running
+const APP_VERSION = "4";     // change this number when you upload a new copy, so you can tell which one is running
 $("verHome").textContent = $("verMenu").textContent = "Version " + APP_VERSION;
 
 // Until server sync exists, everything is saved on this device only, and the badge says so.
