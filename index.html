@@ -1,0 +1,2464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shop POS</title>
+<meta name="theme-color" content="#0f6b5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  /* ---------- COLORS: change these and the whole app changes ---------- */
+  :root {
+    --bg: #f3f5f4; --surface: #ffffff; --text: #14201c; --muted: #5d6b66;
+    --line: #d5dbd8; --accent: #0f6b5c; --accent-text: #ffffff; --danger: #b3261e;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101615; --surface: #18211f; --text: #e6ece9; --muted: #98a8a2;
+      --line: #2c3935; --accent: #4cc2ac; --accent-text: #08201b; --danger: #ff8a80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101615; --surface: #18211f; --text: #e6ece9; --muted: #98a8a2;
+    --line: #2c3935; --accent: #4cc2ac; --accent-text: #08201b; --danger: #ff8a80;
+  }
+
+  /* ---------- LAYOUT ---------- */
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .bar { display: flex; gap: 8px; margin-bottom: 12px; }
+  input { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line);
+          border-radius: 8px; padding: 10px 12px; width: 100%; }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+           color: var(--text); padding: 10px 14px; cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--danger); }
+
+  /* ---------- ITEM ROWS ---------- */
+  .item { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px; margin-bottom: 8px; }
+  .item-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .name { font-weight: 600; }
+  .price { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .meta { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+  .low { color: var(--danger); font-weight: 600; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions button { padding: 6px 12px; font-size: .9rem; }
+  .empty { text-align: center; color: var(--muted); padding: 32px 8px; }
+
+  /* ---------- POPUP FORMS ---------- */
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+           color: var(--text); width: min(92vw, 420px); padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  label { display: block; font-size: .9rem; color: var(--muted); margin: 10px 0 4px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .error { color: var(--danger); min-height: 1.2em; margin: 8px 0 0; font-size: .9rem; }
+  video { width: 100%; border-radius: 8px; background: #000; max-height: 50vh; }
+  /* ---------- TABS + CHECKOUT ---------- */
+  nav { display: flex; gap: 8px; max-width: 640px; margin: 0 auto; padding: 12px 16px 0; }
+  nav button { flex: 1; }
+  nav button.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  [hidden] { display: none !important; }
+  .cart-row { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .cart-top { display: flex; gap: 10px; align-items: baseline; }
+  .cart-top .name { flex: 1; }
+  .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.8em; }
+  .qty { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .qty input { width: 64px; text-align: center; padding: 6px; }
+  .qty button { padding: 6px 12px; }
+  .qty .sp { flex: 1; }
+  .total { display: flex; justify-content: space-between; font-size: 1.4rem; font-weight: 700; padding: 12px 4px; font-variant-numeric: tabular-nums; }
+  .sugg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .msg { min-height: 1.3em; margin: 0 0 8px; font-size: .9rem; color: var(--danger); }
+  .wide { width: 100%; padding: 14px; margin-bottom: 8px; }
+  .rline { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-variant-numeric: tabular-nums; }
+  .rline small { display: block; color: var(--muted); }
+  .sec { font-size: 1.05rem; margin: 20px 0 8px; }
+  .mrow, .srow { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
+                 padding: 10px 12px; margin-bottom: 6px; background: var(--surface); border: 1px solid var(--line);
+                 border-radius: 10px; font-variant-numeric: tabular-nums; }
+  .mrow small, .srow small { display: block; color: var(--muted); }
+  textarea { font: .8rem/1.3 ui-monospace, Menlo, Consolas, monospace; color: inherit; background: var(--bg);
+             border: 1px solid var(--line); border-radius: 8px; padding: 8px; width: 100%; margin-top: 8px; }
+  .cam { position: relative; height: 150px; border-radius: 10px; overflow: hidden; background: #000; margin-bottom: 6px; }
+  .cam video { display: none; width: 100%; height: 100%; max-height: none; object-fit: cover; border-radius: 0; }
+  .cam.on video { display: block; }
+  .cam-off { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #9aa7a2; }
+  .cam.on .cam-off { display: none; }
+  .cam.on::after { content: ""; position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; background: rgba(255, 90, 90, .85); }
+  .cart-row.flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  :root { --chart2: #c9831f; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --chart2: #f0b45a; } }
+  :root[data-theme="dark"] { --chart2: #f0b45a; }
+  select { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line);
+           border-radius: 8px; padding: 10px 12px; width: 100%; margin-bottom: 12px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .stat small { display: block; color: var(--muted); }
+  .stat strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+  .chart { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+  .ptable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .ptable th, .ptable td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+  .ptable .r { text-align: right; }
+  @media print {
+    nav, .noprint, dialog { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    #printView, #printView .sub { color: #000 !important; }
+    .ptable th, .ptable td { border-bottom: 1px solid #999 !important; }
+  }
+  nav button { padding: 10px 6px; }
+  nav { gap: 4px; }
+  nav button { padding: 10px 2px; font-size: .8rem; }
+  nav { gap: 6px; overflow-x: auto; }
+  nav button { flex: 1 0 auto; padding: 10px 14px; font-size: 1rem; }
+  #topbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; max-width: 640px; margin: 0 auto; padding: 12px 16px 0; }
+  #topbar button { padding: 6px 12px; }
+  .big { width: 100%; padding: 18px 16px; margin-bottom: 10px; text-align: left; font-size: 1.1rem; font-weight: 600; }
+  .big small { display: block; font-weight: 400; opacity: .85; margin-top: 2px; font-size: .9rem; }
+  .selfie { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; display: block; margin: 0 auto 10px; border: 1px solid var(--line); }
+  .net { font-size: .85rem; color: var(--muted); }
+  .net.off { color: var(--chart2); font-weight: 600; }
+  /* ---- top bar + side menu ---- */
+  #topbar { position: sticky; top: 0; z-index: 30; max-width: none; margin: 0; padding: 10px 16px; gap: 10px;
+            justify-content: flex-start; background: var(--bg); border-bottom: 1px solid var(--line); }
+  #topbar button { padding: 4px 12px; font-size: 1.3rem; line-height: 1.2; }
+  #pageTitle { flex: 1; font-size: 1.1rem; }
+  #menuBackdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; }
+  #sideMenu { position: fixed; top: 0; bottom: 0; left: 0; width: min(82vw, 300px); z-index: 50; overflow-y: auto;
+              background: var(--surface); border-right: 1px solid var(--line);
+              padding: calc(env(safe-area-inset-top, 0px) + 14px) 12px 16px; display: flex; flex-direction: column; gap: 2px;
+              visibility: hidden; transform: translateX(-100%); transition: transform .2s ease, visibility .2s; }
+  #sideMenu.open { visibility: visible; transform: none; }
+  #sideMenu .mi { text-align: left; width: 100%; border: 0; background: transparent; padding: 12px; font-size: 1rem; }
+  #sideMenu .mi.on { background: var(--bg); color: var(--accent); font-weight: 700; }
+  #sideMenu hr { border: 0; border-top: 1px solid var(--line); width: 100%; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div id="topbar" hidden>
+  <button id="menuBtn" type="button" aria-label="Open menu" aria-expanded="false">☰</button>
+  <button id="homeBtn" type="button" aria-label="Home">⌂</button>
+  <strong id="pageTitle"></strong>
+  <span id="netDot" class="net" title="">●</span>
+</div>
+
+<div id="menuBackdrop" hidden></div>
+<aside id="sideMenu" aria-label="Menu">
+  <div style="padding:4px 12px 10px"><strong id="who"></strong><div id="netTop" class="net"></div><div id="verMenu" class="net"></div></div>
+  <button id="tabHome" type="button" class="mi">Home</button>
+  <button id="tabItems" type="button" class="mi">Items</button>
+  <button id="tabCheckout" type="button" class="mi">Checkout</button>
+  <button id="tabRefunds" type="button" class="mi">Refunds</button>
+  <button id="tabSales" type="button" class="mi">Sales</button>
+  <button id="tabExpenses" type="button" class="mi">Expenses</button>
+  <button id="tabStaff" type="button" class="mi">Staff</button>
+  <button id="tabDrawer" type="button" class="mi">Cash drawer</button>
+  <hr>
+  <button id="logoutBtn" type="button" class="mi">Log out</button>
+</aside>
+
+<main id="dashboardView" hidden>
+  <h1 id="dashDate" style="font-size:1.2rem"></h1>
+  <div class="bar" style="margin-bottom:8px">
+    <button id="dashDay" type="button" style="flex:1">Today</button>
+    <button id="dashWeek" type="button" style="flex:1">This week</button>
+    <button id="dashMonth" type="button" class="primary" style="flex:1">This month</button>
+  </div>
+  <p class="meta" id="dashPeriod" style="margin:0 0 8px"></p>
+  <div id="dashStats"></div>
+  <h2 class="sec" id="dashChartTitle">Revenue and net profit</h2>
+  <p class="meta" style="margin:0 0 6px"><span class="dot" style="background:var(--accent)"></span>Revenue &nbsp;&nbsp; <span class="dot" style="background:var(--chart2)"></span>Net profit</p>
+  <div class="chart" id="dashChart"></div>
+  <button id="dashReport" type="button" class="wide" style="margin-top:10px">See the full sales report</button>
+  <h2 class="sec">Needs attention</h2>
+  <button id="dashLow" type="button" class="wide"></button>
+  <button id="dashExpiry" type="button" class="wide"></button>
+</main>
+
+<main id="alertsView" hidden>
+  <h1 id="alertTitle"></h1>
+  <p class="sub" id="alertSub"></p>
+  <div id="alertList"></div>
+  <button id="alertBack" type="button" class="wide">Back to home</button>
+</main>
+
+<main id="itemsView">
+  <h1>Items</h1>
+  <p class="sub" id="count"></p>
+
+  <div class="bar">
+    <input id="search" type="search" placeholder="Search by name or barcode">
+    <button class="primary" id="addBtn">Add item</button>
+  </div>
+
+  <button id="printBtn" type="button" style="margin-bottom:12px">Print price list</button>
+  <div id="list"></div>
+</main>
+
+<main id="checkoutView" hidden>
+  <h1>Checkout</h1>
+  <p class="sub" id="cartCount"></p>
+  
+  <div class="cam" id="camPanel">
+    <video id="liveVideo" playsinline muted></video>
+    <div class="cam-off">Camera is off</div>
+  </div>
+  <button id="camBtn" type="button" style="width:100%;margin-bottom:6px">Start camera</button>
+  <p class="meta" id="liveMsg" style="margin:0 0 12px"></p>
+  <div class="bar">
+    <input id="scanInput" inputmode="search" autocomplete="off" placeholder="Barcode or item name, then Enter">
+    <button id="cartScanBtn" type="button">Scan</button>
+  </div>
+  <p class="msg" id="cartMsg"></p>
+  <div class="sugg" id="sugg"></div>
+  <div id="cart"></div>
+  <div class="total"><span>Total</span><span id="total">0.00</span></div>
+  <p class="meta" style="margin:0 0 6px">Payment method</p>
+  <div class="bar">
+    <button id="payCash" type="button" class="primary" style="flex:1">Cash</button>
+    <button id="payEw" type="button" style="flex:1">E-wallet</button>
+  </div>
+  <p class="meta" id="payHint" style="margin:0 0 8px"></p>
+  <div id="cashBox">
+    <div class="bar" style="align-items:center">
+      <label for="received" style="margin:0;white-space:nowrap">Amount received</label>
+      <input id="received" type="number" inputmode="decimal" min="0" step="0.01">
+    </div>
+    <div class="total" style="font-size:1.1rem;padding-top:0"><span>Change</span><span id="changeAmt">—</span></div>
+  </div>
+  <div id="ewBox" hidden>
+    <label for="ewRef" style="margin-top:0">E-wallet reference number *</label>
+    <input id="ewRef" autocomplete="off">
+    <label for="ewNote">Note (optional)</label>
+    <input id="ewNote" autocomplete="off">
+    <div style="height:10px"></div>
+  </div>
+  <button id="finishBtn" type="button" class="primary wide">Finish sale</button>
+  <button id="clearBtn" type="button" class="danger wide">Clear cart</button>
+</main>
+
+<!-- Add / edit form -->
+<dialog id="formDlg">
+  <h2 id="formTitle" style="margin:0 0 4px">Add item</h2>
+  <label for="fName">Name *</label>
+  <input id="fName" autocomplete="off">
+  <div class="sugg" id="nameSugg" style="margin:8px 0 0"></div>
+  <label for="fBarcode">Barcode (optional)</label>
+  <div class="row">
+    <input id="fBarcode" inputmode="numeric" autocomplete="off" placeholder="Scan or type">
+    <button id="scanBtn" type="button">Scan</button>
+  </div>
+  <div class="row">
+    <div><label for="fPrice">Selling price *</label><input id="fPrice" type="number" inputmode="decimal" min="0" step="0.01"></div>
+    <div><label for="fCost">Supplier price *</label><input id="fCost" type="number" inputmode="decimal" min="0" step="0.01"></div>
+  </div>
+  <p class="meta" id="profitLine" style="margin:6px 0 0"></p>
+  <label>Stock by expiration date * (add a row for each different date)</label>
+  <p class="meta" style="margin:0 0 6px">Each row can have its own supplier price (“Cost each”), for stock bought at a different price. Leave it empty to use the supplier price above.</p>
+  <div id="batchList"></div>
+  <button id="addDateBtn" type="button">Add another date</button>
+  <p class="meta" id="stockTotal" style="margin:8px 0 0"></p>
+  <p class="error" id="formError"></p>
+  <div class="form-actions">
+    <button id="cancelBtn" type="button">Cancel</button>
+    <button id="saveBtn" class="primary" type="button">Save item</button>
+  </div>
+</dialog>
+
+<main id="salesView" hidden>
+  <h1>Sales</h1>
+  <p class="sub" id="salesCount"></p>
+  <div class="bar" style="margin-bottom:8px">
+    <button id="modeDay" type="button" style="flex:1">Daily</button>
+    <button id="modeWeek" type="button" style="flex:1">Weekly</button>
+    <button id="modeMonth" type="button" class="primary" style="flex:1">Monthly</button>
+  </div>
+  <select id="periodSel" aria-label="Choose a period"></select>
+  <div id="stats"></div>
+  <h2 class="sec" id="chartTitle">Revenue and profit</h2>
+  <p class="meta" style="margin:0 0 6px"><span class="dot" style="background:var(--accent)"></span>Revenue &nbsp;&nbsp; <span class="dot" style="background:var(--chart2)"></span>Net profit</p>
+  <div class="chart" id="chart"></div>
+  <h2 class="sec">Highest and lowest sales</h2>
+  <div id="extremes"></div>
+  <h2 class="sec">Most and least profitable</h2>
+  <div id="profitX"></div>
+  <h2 class="sec">Items sold in this period</h2>
+  <div id="itemsSold"></div>
+  <h2 class="sec">Receipts (tap one to open it)</h2>
+  <div id="salesList"></div>
+  <button id="backupBtn" type="button" class="wide" style="margin-top:16px">Backup and restore</button>
+</main>
+
+<!-- Backup -->
+<dialog id="backupDlg">
+  <h2 style="margin:0 0 4px">Backup and restore</h2>
+  <p class="meta" style="margin:0">To back up: tap Copy, then paste it somewhere safe (a notes app, or an email to yourself). To restore: paste a saved backup into the box and tap Restore.</p>
+  <textarea id="backupText" rows="8"></textarea>
+  <p class="meta" id="backupMsg"></p>
+  <div class="form-actions">
+    <button id="copyBtn" type="button">Copy</button>
+    <button id="restoreBtn" type="button">Restore from box</button>
+    <button id="backupClose" type="button" class="primary">Close</button>
+  </div>
+</dialog>
+
+<main id="homeView" hidden>
+  <h1 style="text-align:center;margin-top:24px">Shop POS</h1>
+  <p class="sub" id="homeMsg" style="text-align:center"></p>
+  <p id="netHome" class="net" style="text-align:center;margin:0 0 4px"></p>
+  <p id="verHome" class="net" style="text-align:center;margin:0 0 12px"></p>
+  <button id="installBtn" type="button" hidden style="display:block;margin:0 auto 12px">Install app on this device</button>
+
+  <div id="hChoice">
+    <button id="hOwner" type="button" class="big primary">Owner login<small>Full access: reports, products, staff, cash drawer</small></button>
+    <button id="hCashier" type="button" class="big">Cashier shift login<small>Limited access: checkout and your own shift</small></button>
+  </div>
+
+  <div id="hSetup" class="item" hidden>
+    <h2 class="sec" style="margin-top:0">Set up the owner account</h2>
+    <p class="meta" style="margin:0">The password is for setup and recovery. The PIN is a short code for quick access on this device.</p>
+    <label for="suPw">Password (8 or more characters)</label>
+    <input id="suPw" type="password" autocomplete="new-password">
+    <label for="suPw2">Repeat password</label>
+    <input id="suPw2" type="password" autocomplete="new-password">
+    <label for="suPin">PIN (4 to 6 digits)</label>
+    <input id="suPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+    <label for="suPin2">Repeat PIN</label>
+    <input id="suPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+    <p class="error" id="suErr"></p>
+    <button id="suBtn" type="button" class="primary" style="width:100%">Create owner account</button>
+    <button type="button" class="back" style="width:100%;margin-top:8px">Back</button>
+  </div>
+
+  <div id="hOwnerLogin" class="item" hidden>
+    <h2 class="sec" style="margin-top:0">Owner login</h2>
+    <label for="olInput" id="olLabel">PIN</label>
+    <input id="olInput" type="password" inputmode="numeric" autocomplete="off">
+    <p class="error" id="olMsg"></p>
+    <button id="olBtn" type="button" class="primary" style="width:100%">Log in</button>
+    <button id="olSwitch" type="button" style="width:100%;margin-top:8px">Use password instead</button>
+    <button id="olForgot" type="button" style="width:100%;margin-top:8px" hidden>Forgot password?</button>
+    <p class="meta" id="olForgotText" hidden>Without an online account, a forgotten password can't be recovered. The only way back in is to clear this site's data in your browser settings, which erases everything on this device, and then restore from a backup you saved earlier. Forgot only the PIN? Log in with your password and set a new PIN under Staff.</p>
+    <button type="button" class="back" style="width:100%;margin-top:8px">Back</button>
+  </div>
+
+  <div id="hCashierLogin" class="item" hidden>
+    <h2 class="sec" style="margin-top:0">Cashier shift login</h2>
+    <label for="hCashierSel">Who are you?</label>
+    <select id="hCashierSel" style="margin-bottom:0"></select>
+    <label for="hCashierPin">Today's PIN (ask the owner)</label>
+    <input id="hCashierPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off">
+    <p class="meta" id="hCashMsg"></p>
+    <div id="hStartBox" hidden>
+      <label for="hFloat">Opening cash amount</label>
+      <input id="hFloat" type="number" inputmode="decimal" min="0" step="0.01">
+    </div>
+    <p class="error" id="hCashErr"></p>
+    <button id="hStartShift" type="button" class="primary" style="width:100%" hidden>Start shift</button>
+    <button id="hResumeBtn" type="button" class="primary" style="width:100%" hidden>Resume my shift</button>
+    <button type="button" class="back" style="width:100%;margin-top:8px">Back</button>
+  </div>
+</main>
+
+<main id="refundsView" hidden>
+  <h1>Refunds</h1>
+  <p class="meta" id="rfMsg"></p>
+  <div id="rfPick">
+    <p class="sub">Choose the receipt the customer is returning items from.</p>
+    <input id="rfSearch" inputmode="numeric" placeholder="Search by receipt number" autocomplete="off">
+    <div id="rfList" style="margin-top:10px"></div>
+  </div>
+  <div id="rfForm" hidden>
+    <div class="item"><strong id="rfHead"></strong><p class="meta" id="rfSub" style="margin:4px 0 0"></p></div>
+    <div id="rfLines"></div>
+    <label for="rfReason">Reason *</label>
+    <select id="rfReason" style="margin-bottom:0">
+      <option value="">Choose a reason</option>
+      <option>Customer changed their mind</option><option>Wrong item</option><option>Damaged or expired</option>
+      <option>Price error</option><option>Other</option>
+    </select>
+    <label for="rfNote">Details (optional)</label>
+    <input id="rfNote" autocomplete="off">
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input id="rfRestock" type="checkbox" checked style="width:auto"> Return the items to stock</label>
+    <div id="rfEw" hidden>
+      <label for="rfRef">E-wallet refund reference number *</label>
+      <input id="rfRef" autocomplete="off">
+    </div>
+    <div class="total"><span>Refund total</span><span id="rfTotal"></span></div>
+    <p class="error" id="rfErr"></p>
+    <button id="rfProcess" type="button" class="primary wide">Process refund</button>
+    <button id="rfBack" type="button" class="wide">Back</button>
+  </div>
+  <div id="rfHistoryBox">
+    <h2 class="sec">Refund history</h2>
+    <div id="rfHistory"></div>
+  </div>
+</main>
+
+<main id="staffView" hidden>
+  <h1>Staff and security</h1>
+  <h2 class="sec">Cashiers</h2>
+  <div class="bar">
+    <input id="cName" placeholder="New cashier's name" autocomplete="off">
+    <button id="addCashierBtn" type="button" class="primary">Add</button>
+  </div>
+  <p class="error" id="cErr"></p>
+  <div id="cList"></div>
+  <h2 class="sec">Owner security</h2>
+  <div class="item">
+    <label for="secPass" style="margin-top:0">Current password</label>
+    <input id="secPass" type="password" autocomplete="current-password">
+    <label for="secNewPin">New PIN (4 to 6 digits)</label>
+    <input id="secNewPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+    <button id="changePinBtn" type="button" style="margin-top:8px">Change PIN</button>
+    <label for="secNewPass">New password (8 or more characters)</label>
+    <input id="secNewPass" type="password" autocomplete="new-password">
+    <button id="changePassBtn" type="button" style="margin-top:8px">Change password</button>
+    <p class="error" id="secMsg"></p>
+  </div>
+</main>
+
+<main id="drawerView" hidden>
+  <h1>Cash drawer</h1>
+  <p class="sub" id="dSub"></p>
+
+  <div id="dStart" class="item" hidden>
+    <h2 class="sec" style="margin-top:0">Start a shift</h2>
+    <p class="meta" style="margin:0">Count the cash in the drawer and enter it as the opening amount.</p>
+    <label for="dFloat">Opening cash amount</label>
+    <input id="dFloat" type="number" inputmode="decimal" min="0" step="0.01">
+    <p class="error" id="dErr"></p>
+    <button id="startOwnerShiftBtn" type="button" class="primary" style="width:100%">Start shift</button>
+  </div>
+
+  <div id="dOpen" hidden>
+    <div class="stats" id="dStats"></div>
+    <div class="item">
+      <h2 class="sec" style="margin-top:0">Cash payout</h2>
+      <p class="meta" style="margin:0">Money taken out of the drawer, like paying a supplier or a delivery.</p>
+      <label for="dPayAmt">Amount</label>
+      <input id="dPayAmt" type="number" inputmode="decimal" min="0" step="0.01">
+      <label for="dPayNote">Reason (optional)</label>
+      <input id="dPayNote" autocomplete="off">
+      <p class="error" id="dPayErr"></p>
+      <button id="payoutBtn" type="button" style="width:100%">Record payout</button>
+      <div id="dPayouts" style="margin-top:10px"></div>
+    </div>
+    <div class="item">
+      <h2 class="sec" style="margin-top:0">Close shift</h2>
+      <p class="meta" style="margin:0">Count the cash in the drawer and enter the total.</p>
+      <label for="dActual">Actual cash counted</label>
+      <input id="dActual" type="number" inputmode="decimal" min="0" step="0.01">
+      <label for="dCloseNote">Note (optional)</label>
+      <input id="dCloseNote" autocomplete="off">
+      <p class="error" id="dCloseErr"></p>
+      <button id="closeShiftBtn" type="button" class="primary" style="width:100%">Close shift</button>
+    </div>
+  </div>
+
+  <div id="dResult"></div>
+  <div id="dHistoryBox">
+    <h2 class="sec">Shift history</h2>
+    <p class="meta" id="dSummary"></p>
+    <div id="dHistory"></div>
+  </div>
+</main>
+
+<main id="expensesView" hidden>
+  <h1>Expenses</h1>
+  <p class="sub">Rent, electricity, delivery fees and other costs. They are subtracted from your profit.</p>
+  <div class="item">
+    <label for="xDate" style="margin-top:0">Date</label>
+    <input id="xDate" type="date">
+    <label for="xCat">Category</label>
+    <select id="xCat" style="margin-bottom:0">
+      <option>Rent</option><option>Electricity</option><option>Water</option><option>Delivery fees</option>
+      <option>Salaries</option><option>Supplies</option><option>Other</option>
+    </select>
+    <label for="xAmt">Amount</label>
+    <input id="xAmt" type="number" inputmode="decimal" min="0" step="0.01">
+    <label for="xNote">Note (optional)</label>
+    <input id="xNote" autocomplete="off">
+    <label for="xSpread">How to count it</label>
+    <select id="xSpread" style="margin-bottom:0">
+      <option value="once">One-time (counts on that date)</option>
+      <option value="month">Monthly (spread evenly over that month)</option>
+    </select>
+    <p class="error" id="xErr"></p>
+    <button id="addExpenseBtn" type="button" class="primary" style="width:100%">Add expense</button>
+  </div>
+  <h2 class="sec" id="xTotal">Expenses</h2>
+  <div id="xList"></div>
+</main>
+
+<main id="printView" hidden>
+  <div class="noprint" style="display:flex;gap:8px;margin-bottom:12px">
+    <button id="printBack" type="button">Back</button>
+    <button id="printNow" type="button" class="primary">Print</button>
+  </div>
+  <h1>Price list</h1>
+  <p class="sub" id="printDate"></p>
+  <div style="overflow-x:auto">
+    <table class="ptable">
+      <thead><tr><th>#</th><th>Item</th><th>Barcode</th><th class="r">Selling price</th><th class="r">Supplier price</th><th class="r">Profit</th></tr></thead>
+      <tbody id="printRows"></tbody>
+    </table>
+  </div>
+  <p class="meta noprint">If nothing happens when you tap Print, printing is blocked inside the preview. Open the page on its own web address to print, or take a screenshot of this list.</p>
+</main>
+
+<!-- Receipt -->
+<dialog id="receiptDlg">
+  <h2 style="margin:0">Receipt <span id="rcptNo"></span></h2>
+  <p class="meta" id="rcptDate"></p>
+  <div id="rcptLines"></div>
+  <div class="total"><span>Total</span><span id="rcptTotal"></span></div>
+  <div id="rcptPay"></div>
+  <div class="form-actions"><button id="rcptDone" type="button" class="primary">Done</button></div>
+</dialog>
+
+<!-- Yes/No confirmation -->
+<dialog id="confirmDlg">
+  <p id="confirmText" style="margin:0"></p>
+  <div class="form-actions">
+    <button id="confirmNo" type="button">Cancel</button>
+    <button id="confirmYes" type="button" class="primary">Yes</button>
+  </div>
+</dialog>
+
+<!-- Camera scanner -->
+<dialog id="scanDlg">
+  <h2 style="margin:0 0 8px">Scan barcode</h2>
+  <video id="video" playsinline muted></video>
+  <p class="error" id="scanMsg"></p>
+  <!-- Fallback: opens the phone's own camera app, then reads the barcode from the photo -->
+  <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+  <div class="form-actions">
+    <button id="photoBtn" type="button">Take a photo instead</button>
+    <button id="scanCancel" type="button">Close</button>
+  </div>
+</dialog>
+
+<script>
+/* =====================================================
+   1. DATA – the list of items lives in "items".
+      We save it in the browser so it survives refreshes.
+   ===================================================== */
+const STORAGE_KEY = "pos_items_v1";
+const CURRENCY = "₱";          // e.g. set to "$" or "₱" to show a symbol before prices
+const LOW_STOCK = 5;          // stock at or below this is shown in red
+
+let items = loadItems();
+let autoFilledId = null;   // set when a typed/scanned barcode matched an existing item
+let editingId = null;         // null = adding a new item, otherwise the id being edited
+
+// Older items had one stock number plus a list of dates. Convert them to "batches" (a date with its own quantity).
+function migrateItem(it) {
+  if (!Array.isArray(it.batches)) {
+    const dates = Array.isArray(it.expiries) ? it.expiries.filter(Boolean).sort() : [];
+    it.batches = dates.map((d, n) => ({ date: d, qty: n === 0 ? it.stock : 0 }));   // all stock on the first date
+    delete it.expiries;
+  }
+  // batches from before cost tracking get the item's supplier price at the time of this update
+  it.batches.forEach(b => { if (typeof b.cost !== "number" && typeof it.cost === "number") b.cost = it.cost; });
+  return it;
+}
+
+function loadItems() {
+  try { return (JSON.parse(localStorage.getItem(STORAGE_KEY)) || []).map(migrateItem); }
+  catch (e) { return []; }    // storage empty or blocked: start with an empty list
+}
+function saveItems() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+  catch (e) { alert("Could not save. Your browser may be blocking storage."); }
+}
+
+/* =====================================================
+   2. SHOWING THE LIST
+   ===================================================== */
+const $ = (id) => document.getElementById(id);
+const money = (n) => (n < 0 ? "-" : "") + CURRENCY + Math.abs(Number(n)).toFixed(2);
+
+// Our own "Are you sure?" popup. Shows the question; runs onYes only if they confirm.
+function askConfirm(text, yesLabel, onYes) {
+  $("confirmText").textContent = text;
+  $("confirmYes").textContent = yesLabel;
+  $("confirmYes").onclick = () => { $("confirmDlg").close(); onYes(); };
+  $("confirmNo").onclick = () => $("confirmDlg").close();
+  $("confirmDlg").showModal();
+}
+
+// ---- date helpers (dates are stored as text like "2026-11-30") ----
+function parseDate(d) { const [y, m, day] = d.split("-").map(Number); return new Date(y, m - 1, day); }
+function niceDate(d) { return parseDate(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+function daysUntil(d) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((parseDate(d) - today) / 86400000);
+}
+
+function render() {
+  const q = $("search").value.trim().toLowerCase();
+  const shown = items
+    .filter(i => i.name.toLowerCase().includes(q) || i.barcode.includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  $("count").textContent = items.length + (items.length === 1 ? " item" : " items");
+  const list = $("list");
+  list.textContent = "";
+
+  if (shown.length === 0) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = items.length === 0 ? "No items yet. Tap “Add item” to create your first one."
+                                       : "No items match your search.";
+    list.appendChild(p);
+    return;
+  }
+
+  for (const it of shown) {
+    const card = document.createElement("div");
+    card.className = "item";
+
+    const top = document.createElement("div");
+    top.className = "item-top";
+    const name = document.createElement("span");
+    name.className = "name"; name.textContent = it.name;
+    const price = document.createElement("span");
+    price.className = "price"; price.textContent = money(it.price);
+    top.append(name, price);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const stock = document.createElement("span");
+    stock.textContent = "Stock: " + it.stock;
+    if (it.stock <= LOW_STOCK) stock.className = "low";
+    meta.append(stock, document.createTextNode("  ·  Barcode: " + (it.barcode || "none")));
+
+    // supplier price + profit
+    const extra = document.createElement("div"); extra.className = "meta";
+    if (typeof it.cost === "number") {
+      const profit = Math.round((it.price - it.cost) * 100) / 100;
+      const margin = it.price > 0 ? Math.round(profit / it.price * 1000) / 10 : 0;
+      extra.textContent = "Supplier price: " + money(it.cost) + "  ·  Profit: " + money(profit) + " each (" + margin + "%)";
+    } else {
+      extra.textContent = "Supplier price not set. Tap Edit to add it.";
+    }
+
+    // expiration dates with their quantities (red when expired or within 30 days)
+    const exp = document.createElement("div"); exp.className = "meta";
+    const batches = (it.batches || []).filter(b => b.qty > 0).sort((a, b) => a.date.localeCompare(b.date));
+    if (!batches.length) {
+      exp.textContent = it.stock > 0 ? "Expiration dates not set. Tap Edit to add them." : "No stock left.";
+    } else {
+      exp.append("Expires: ");
+      batches.forEach((b, n) => {
+        const days = daysUntil(b.date);
+        const span = document.createElement("span");
+        span.textContent = niceDate(b.date) + " (×" + b.qty + (typeof b.cost === "number" ? " @ " + money(b.cost) : "") + ")" +
+          (days < 0 ? " expired" : days === 0 ? " today" : days <= 30 ? " " + days + "d left" : "");
+        if (days <= 30) span.className = "low";
+        exp.append(span);
+        if (n < batches.length - 1) exp.append(", ");
+      });
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const edit = document.createElement("button");
+    edit.textContent = "Edit";
+    edit.onclick = () => openForm(it.id);
+    const del = document.createElement("button");
+    del.textContent = "Delete"; del.className = "danger";
+    del.onclick = () => deleteItem(it.id);
+    actions.append(edit, del);
+
+    card.append(top, meta, extra, exp, actions);
+    list.appendChild(card);
+  }
+}
+
+/* =====================================================
+   3. ADD / EDIT / DELETE
+   ===================================================== */
+let batchRows = [];   // rows in the form: { date: "2026-11-30", qty: "10" }
+
+function updateStockTotal() {
+  const total = batchRows.reduce((sum, r) => sum + (parseInt(r.qty, 10) || 0), 0);
+  $("stockTotal").textContent = "Total stock: " + total;
+}
+
+function renderBatchInputs() {
+  const box = $("batchList");
+  box.textContent = "";
+  batchRows.forEach((r, n) => {
+    const card = document.createElement("div");
+    card.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px";
+    const date = document.createElement("input");
+    date.type = "date"; date.value = r.date || "";
+    date.oninput = date.onchange = () => { r.date = date.value; };
+    const line = document.createElement("div");
+    line.className = "row"; line.style.marginTop = "6px";
+    const qty = document.createElement("input");
+    qty.type = "number"; qty.inputMode = "numeric"; qty.min = 0; qty.step = 1; qty.placeholder = "Qty"; qty.value = r.qty ?? "";
+    qty.oninput = () => { r.qty = qty.value; updateStockTotal(); };
+    const cost = document.createElement("input");
+    cost.type = "number"; cost.inputMode = "decimal"; cost.min = 0; cost.step = 0.01; cost.placeholder = "Cost each"; cost.value = r.cost ?? "";
+    cost.oninput = () => { r.cost = cost.value; };
+    const del = button("Remove", () => {
+      batchRows.splice(n, 1);
+      if (!batchRows.length) batchRows.push({ date: "", qty: "", cost: "" });
+      renderBatchInputs();
+    });
+    del.className = "danger";
+    line.append(qty, cost, del);
+    card.append(date, line);
+    box.appendChild(card);
+  });
+  updateStockTotal();
+}
+
+// Puts an item's details into the form boxes (or empties them when given nothing)
+function fillForm(it) {
+  $("fName").value = it ? it.name : "";
+  $("fBarcode").value = it ? it.barcode : "";
+  $("fPrice").value = it ? it.price : "";
+  $("fCost").value = it && typeof it.cost === "number" ? it.cost : "";
+  if (it && it.batches && it.batches.length) batchRows = it.batches.map(b => ({ date: b.date, qty: String(b.qty), cost: typeof b.cost === "number" ? String(b.cost) : "" }));
+  else batchRows = [{ date: "", qty: it && it.stock > 0 ? String(it.stock) : "", cost: "" }];   // old item: keep its stock, ask for a date
+  renderBatchInputs();
+  updateProfitLine();
+}
+
+// Live "profit per unit" under the price boxes
+function updateProfitLine() {
+  const price = parseFloat($("fPrice").value), cost = parseFloat($("fCost").value);
+  const el = $("profitLine");
+  if (isNaN(price) || isNaN(cost)) { el.textContent = ""; return; }
+  const profit = Math.round((price - cost) * 100) / 100;
+  const margin = price > 0 ? Math.round(profit / price * 1000) / 10 : 0;
+  el.textContent = "Profit per unit: " + money(profit) + " (" + margin + "% of the selling price)";
+}
+
+// Switch the form over to an item that already exists, so it gets updated instead of duplicated
+function useExisting(it, note, fromBarcode) {
+  editingId = it.id;
+  autoFilledId = fromBarcode ? it.id : null;
+  $("formTitle").textContent = "Edit item";
+  fillForm(it);
+  $("nameSugg").textContent = "";
+  $("formError").textContent = note;
+}
+
+// While typing a name: suggest existing items with the same words, with their prices
+function onNameInput() {
+  const box = $("nameSugg");
+  box.textContent = "";
+  const q = $("fName").value.trim().toLowerCase();
+  if (editingId || q.length < 2) return;
+  const matches = items.filter(i => i.name.toLowerCase().includes(q)).slice(0, 5);
+  if (!matches.length) return;
+  const note = document.createElement("p");
+  note.className = "meta"; note.style.cssText = "width:100%;margin:0";
+  note.textContent = "Already in your items. Tap one to edit it:";
+  box.appendChild(note);
+  for (const it of matches) {
+    box.appendChild(button(it.name + " – " + money(it.price),
+      () => useExisting(it, "This item already exists. Change what you need and save to update it.", false)));
+  }
+}
+
+// Runs whenever the barcode box changes (typed, scanned, or sent by a USB scanner).
+// If the barcode already belongs to an item, show that item so it can be updated instead of duplicated.
+function onBarcodeChange() {
+  const code = $("fBarcode").value.trim();
+
+  // We had filled in an item from its barcode, but the barcode was changed: back to adding a new item
+  if (autoFilledId) {
+    const filled = items.find(i => i.id === autoFilledId);
+    if (!filled || filled.barcode !== code) {
+      const typed = $("fBarcode").value;
+      editingId = null; autoFilledId = null;
+      $("formTitle").textContent = "Add item";
+      fillForm(null);
+      $("fBarcode").value = typed;
+      $("formError").textContent = "";
+    }
+  }
+  if (editingId || !code) return;
+
+  const existing = items.find(i => i.barcode === code);
+  if (existing) useExisting(existing, "This barcode already exists, so its details are filled in. Saving will update this item.", true);
+}
+
+function openForm(id) {
+  editingId = id || null;
+  autoFilledId = null;
+  const it = items.find(i => i.id === id);
+  $("formTitle").textContent = it ? "Edit item" : "Add item";
+  fillForm(it);
+  $("nameSugg").textContent = "";
+  $("formError").textContent = "";
+  $("formDlg").showModal();
+}
+
+function submitForm() {
+  const name = $("fName").value.trim();
+  const barcode = $("fBarcode").value.trim();
+  const price = parseFloat($("fPrice").value);
+  const cost = parseFloat($("fCost").value);
+
+  // Required: name, selling price, supplier price, and at least one expiration date with a quantity
+  if (!name) return fail("Enter a name for the item.");
+  if (isNaN(price) || price < 0) return fail("Enter a selling price of 0 or more.");
+  if (isNaN(cost) || cost < 0) return fail("Enter the supplier price (0 or more).");
+
+  // Each row is a batch: an expiration date, how many, and what each one cost
+  const batches = [];
+  for (const r of batchRows) {
+    const hasDate = !!r.date, hasQty = String(r.qty ?? "").trim() !== "";
+    if (!hasDate && !hasQty) continue;                       // ignore empty rows
+    if (!hasDate) return fail("Pick an expiration date for each quantity.");
+    const q = parseInt(r.qty, 10);
+    if (!hasQty || isNaN(q) || q < 0) return fail("Enter a quantity (0 or more) for each expiration date.");
+    let c = cost;                                            // empty = use the supplier price above
+    if (String(r.cost ?? "").trim() !== "") {
+      c = parseFloat(r.cost);
+      if (isNaN(c) || c < 0) return fail("Enter a valid cost for each date, or leave it empty.");
+    }
+    batches.push({ date: r.date, qty: q, cost: c });
+  }
+  batches.sort((a, b) => a.date.localeCompare(b.date));
+  if (!batches.length) return fail("Add at least one expiration date with its quantity.");
+  const stock = batches.reduce((sum, b) => sum + b.qty, 0);   // total stock = all dates added up
+
+  if (barcode && items.some(i => i.barcode === barcode && i.id !== editingId))
+    return fail("Another item already uses this barcode.");
+
+  if (editingId) {
+    const it = items.find(i => i.id === editingId);
+    Object.assign(it, { name, barcode, price, cost, stock, batches });
+  } else {
+    items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                 name, barcode, price, cost, stock, batches });
+  }
+  saveItems();
+  $("formDlg").close();
+  render();
+  if (!$("alertsView").hidden) renderAlerts();
+}
+function fail(msg) { $("formError").textContent = msg; }
+
+function deleteItem(id) {
+  const it = items.find(i => i.id === id);
+  askConfirm("Delete “" + it.name + "”? This cannot be undone.", "Delete", () => {
+    items = items.filter(i => i.id !== id);
+    saveItems();
+    render();
+  });
+}
+
+/* =====================================================
+   4. BARCODE SCANNING (uses the phone camera)
+      Works in Chrome on Android. If it isn't available,
+      type the barcode, or use a USB/Bluetooth scanner:
+      those "type" the number into the Barcode box for you.
+   ===================================================== */
+let stream = null, timer = null, onScanned = null;   // onScanned = what to do with the number
+
+async function startScan(callback) {
+  onScanned = callback;
+  $("scanMsg").textContent = "";
+  $("scanDlg").showModal();
+  if (!("BarcodeDetector" in window)) {
+    $("scanMsg").textContent = "Camera scanning isn't supported in this browser. Type the barcode instead.";
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    $("video").srcObject = stream;
+    await $("video").play();
+    const detector = new BarcodeDetector();
+    timer = setInterval(async () => {
+      try {
+        const found = await detector.detect($("video"));
+        if (found.length) {
+          onScanned(found[0].rawValue);   // hand the scanned number to whoever asked
+          stopScan();
+        }
+      } catch (e) { /* ignore a failed frame and try the next one */ }
+    }, 300);
+  } catch (e) {
+    $("scanMsg").textContent = "Couldn't open the camera. Allow camera access, or type the barcode instead.";
+  }
+}
+// Fallback: the phone's camera app takes a photo, then we look for a barcode in it.
+// This works even when the live camera is blocked, because no permission is needed.
+async function readPhoto(file) {
+  if (!file) return;
+  if (!("BarcodeDetector" in window)) {
+    $("scanMsg").textContent = "This browser can't read barcodes. Type the barcode instead.";
+    return;
+  }
+  $("scanMsg").textContent = "Reading photo...";
+  try {
+    const bitmap = await createImageBitmap(file);
+    const found = await new BarcodeDetector().detect(bitmap);
+    if (found.length) {
+      onScanned(found[0].rawValue);
+      stopScan();
+    } else {
+      $("scanMsg").textContent = "No barcode found. Move closer, keep it flat and sharp, and try again.";
+    }
+  } catch (e) {
+    $("scanMsg").textContent = "Couldn't read that photo. Try again or type the barcode.";
+  }
+  $("photoInput").value = "";   // so the same photo can be picked again
+}
+
+function stopScan() {
+  clearInterval(timer);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  if ($("scanDlg").open) $("scanDlg").close();
+}
+
+/* =====================================================
+   5. CHECKOUT – the cart (step 2)
+   ===================================================== */
+let lastAddedId = null, cartTotal = 0;
+let cart = [];   // each line: { id: the item's id, qty: how many }
+
+function button(text, fn) {
+  const b = document.createElement("button");
+  b.textContent = text; b.onclick = fn;
+  return b;
+}
+function showMsg(t) { $("cartMsg").textContent = t || ""; }
+
+// Called with a scanned/typed barcode, or part of an item name
+function addToCart(code) {
+  code = String(code).trim();
+  showMsg(""); $("sugg").textContent = "";
+  if (!code) return;
+  const item = items.find(i => i.barcode && i.barcode === code);
+  if (item) { addItem(item); $("scanInput").value = ""; return; }
+  // not a known barcode: offer items whose name matches what was typed
+  const q = code.toLowerCase();
+  const matches = items.filter(i => i.name.toLowerCase().includes(q)).slice(0, 6);
+  if (!matches.length) { showMsg("No item found for “" + code + "”."); return; }
+  for (const m of matches) {
+    $("sugg").appendChild(button(m.name + " (" + money(m.price) + ")", () => {
+      addItem(m); $("sugg").textContent = ""; $("scanInput").value = "";
+    }));
+  }
+}
+
+function addItem(item) {
+  const line = cart.find(l => l.id === item.id);
+  if ((line ? line.qty : 0) + 1 > item.stock) {
+    showMsg("Only " + item.stock + " of “" + item.name + "” in stock."); return false;
+  }
+  if (line) line.qty++; else cart.push({ id: item.id, qty: 1 });
+  lastAddedId = item.id;     // renderCart will scroll to this row
+  renderCart();
+  return true;
+}
+
+function setQty(id, qty) {
+  const line = cart.find(l => l.id === id);
+  const item = items.find(i => i.id === id);
+  if (!line || !item) return;
+  if (isNaN(qty) || qty < 1) qty = 1;
+  if (qty > item.stock) { qty = item.stock; showMsg("Only " + item.stock + " of “" + item.name + "” in stock."); }
+  else showMsg("");
+  line.qty = qty;
+  renderCart();
+}
+
+function removeLine(id) { cart = cart.filter(l => l.id !== id); renderCart(); }
+
+function renderCart() {
+  // keep the cart honest if items were deleted or stock changed on the Items tab
+  cart = cart.filter(l => items.some(i => i.id === l.id && i.stock > 0));
+  cart.forEach(l => { const it = items.find(i => i.id === l.id); if (l.qty > it.stock) l.qty = it.stock; });
+
+  const box = $("cart");
+  box.textContent = "";
+  let total = 0, units = 0;
+
+  if (cart.length === 0) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = "The cart is empty. Scan an item or type a name above.";
+    box.appendChild(p);
+  }
+
+  cart.forEach((line, n) => {          // n starts at 0, so the row number is n + 1
+    const item = items.find(i => i.id === line.id);
+    total += item.price * line.qty; units += line.qty;
+
+    const row = document.createElement("div"); row.className = "cart-row"; row.dataset.id = line.id;
+    const top = document.createElement("div"); top.className = "cart-top";
+    const num = document.createElement("span"); num.className = "num"; num.textContent = (n + 1) + ".";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = item.name;
+    const sum = document.createElement("span"); sum.className = "price"; sum.textContent = money(item.price * line.qty);
+    top.append(num, name, sum);
+
+    const unit = document.createElement("div"); unit.className = "meta"; unit.textContent = money(item.price) + " each";
+
+    const qty = document.createElement("div"); qty.className = "qty";
+    const input = document.createElement("input");
+    input.type = "number"; input.inputMode = "numeric"; input.min = 1; input.value = line.qty;
+    input.onchange = () => setQty(line.id, parseInt(input.value, 10));
+    const sp = document.createElement("span"); sp.className = "sp";
+    const del = button("Remove", () => removeLine(line.id)); del.className = "danger";
+    qty.append(button("−", () => setQty(line.id, line.qty - 1)), input,
+               button("+", () => setQty(line.id, line.qty + 1)), sp, del);
+
+    row.append(top, unit, qty);
+    box.appendChild(row);
+  });
+
+  $("cartCount").textContent = units + (units === 1 ? " item" : " items") + " in cart";
+  $("total").textContent = money(total);
+  cartTotal = Math.round(total * 100) / 100;
+  updateChange();
+  $("payHint").textContent = canEwallet() ? "" : "E-wallet payments are turned off for your profile. Ask the owner to allow them.";
+  if (payMethod === "ewallet" && !canEwallet()) setPayMethod("cash");
+
+
+  // jump to the row that was just added and flash it so it's easy to spot
+  if (lastAddedId) {
+    const row = [...box.children].find(r => r.dataset && r.dataset.id === lastAddedId);
+    lastAddedId = null;
+    if (row) {
+      row.classList.add("flash");
+      row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setTimeout(() => row.classList.remove("flash"), 1200);
+    }
+  }
+}
+
+/* ---- Sales: every finished sale is saved here (this is what monthly revenue will use) ---- */
+const SALES_KEY = "pos_sales_v1";
+let sales = loadSales();
+function loadSales() {
+  try { return JSON.parse(localStorage.getItem(SALES_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveSales() {
+  try { localStorage.setItem(SALES_KEY, JSON.stringify(sales)); return true; }
+  catch (e) { return false; }
+}
+
+let payMethod = "cash";
+function setPayMethod(m) {
+  if (m === "ewallet" && !canEwallet()) { showMsg("E-wallet payments are not allowed for your profile. Ask the owner."); m = "cash"; }
+  payMethod = m;
+  $("payCash").className = m === "cash" ? "primary" : "";
+  $("payEw").className = m === "ewallet" ? "primary" : "";
+  $("payCash").style.flex = $("payEw").style.flex = "1";
+  $("cashBox").hidden = m !== "cash"; $("ewBox").hidden = m !== "ewallet";
+}
+
+// Shows the change (or how much is still owed) under the total
+function updateChange() {
+  const el = $("changeAmt");
+  const v = parseFloat($("received").value);
+  if (isNaN(v)) { el.textContent = "—"; el.className = ""; return; }
+  const diff = Math.round((v - cartTotal) * 100) / 100;
+  if (diff >= 0) { el.textContent = money(diff); el.className = ""; }
+  else { el.textContent = "Short by " + money(-diff); el.className = "low"; }
+}
+
+// What the units about to be sold actually cost, taking the oldest-expiring batches first.
+// Different batches can have different costs, so a sale's profit uses the batches it really came from.
+function fefoCost(it, qty) {
+  if (!it.batches || !it.batches.length) return typeof it.cost === "number" ? it.cost * qty : null;
+  let left = qty, total = 0;
+  for (const b of it.batches.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+    if (left <= 0) break;
+    const unit = typeof b.cost === "number" ? b.cost : it.cost;
+    if (typeof unit !== "number") return null;
+    const used = Math.min(b.qty, left);
+    total += used * unit; left -= used;
+  }
+  if (left > 0) {                                  // sold more than the batches hold: use the current supplier price
+    if (typeof it.cost !== "number") return null;
+    total += left * it.cost;
+  }
+  return total;
+}
+
+// Sell from the batch that expires first, then the next one, and so on
+function takeStock(it, qty) {
+  if (!it.batches || !it.batches.length) { it.stock = Math.max(0, it.stock - qty); return; }   // old item without dates
+  let left = qty;
+  for (const b of it.batches.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+    if (left <= 0) break;
+    const used = Math.min(b.qty, left);
+    b.qty -= used; left -= used;
+  }
+  it.batches = it.batches.filter(b => b.qty > 0);
+  it.stock = it.batches.reduce((sum, b) => sum + b.qty, 0);
+}
+
+function finishSale() {
+  if (cart.length === 0) { showMsg("Add at least one item before finishing the sale."); return; }
+  if (!isOwner() && !(activeShift() && activeShift().id === session.shiftId)) {
+    showMsg("Your shift is not open. Log out and start a new shift."); return;
+  }
+
+  // Copy name, barcode and price into the sale, so old receipts stay correct even if prices change later
+  const lines = cart.map(l => {
+    const it = items.find(i => i.id === l.id);
+    const cogs = fefoCost(it, l.qty);                 // what these units really cost us
+    return { id: it.id, name: it.name, barcode: it.barcode, price: it.price, cost: cogs === null ? null : cogs / l.qty, qty: l.qty };
+  });
+  const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
+  const no = sales.length ? Math.max(...sales.map(x => x.no)) + 1 : 1;   // receipt number: 1, 2, 3...
+  // How the customer paid: cash (with change) or e-wallet (needs a reference number)
+  let received, change = 0, reference = "", payNote = "";
+  if (payMethod === "ewallet") {
+    if (!canEwallet()) { showMsg("E-wallet payments are not allowed for your profile."); return; }
+    reference = $("ewRef").value.trim();
+    if (!reference) { showMsg("Enter the e-wallet reference number."); return; }
+    const dup = sales.find(x => x.method === "ewallet" && (x.reference || "").toLowerCase() === reference.toLowerCase());
+    if (dup) { showMsg("That reference number was already used on receipt #" + pad4(dup.no) + "."); return; }
+    payNote = $("ewNote").value.trim();
+    received = total;
+  } else {
+    received = parseFloat($("received").value);
+    if (isNaN(received)) received = total;               // empty box = exact amount
+    if (Math.round(received * 100) < Math.round(total * 100)) { showMsg("The amount received is less than the total."); return; }
+    change = Math.round((received - total) * 100) / 100;
+  }
+  const sale = { no, date: new Date().toISOString(), lines, total, received, change, method: payMethod, reference, payNote,
+                 shiftId: currentShiftId(),                                              // the cash drawer shift this sale belongs to
+                 cashierId: isOwner() ? null : session.cashierId, cashier: whoName() };  // who made the sale
+
+  sales.push(sale);
+  if (!saveSales()) { sales.pop(); showMsg("Couldn't save the sale. Nothing was changed."); return; }
+
+  for (const l of cart) takeStock(items.find(i => i.id === l.id), l.qty);   // reduce stock
+  saveItems();
+  cart = [];
+  showMsg("");
+  $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = ""; setPayMethod("cash");
+  renderCart();
+  render();            // refresh the Items list so the new stock shows
+  showReceipt(sale);
+}
+
+function showReceipt(sale) {
+  $("rcptNo").textContent = "#" + String(sale.no).padStart(4, "0");
+  $("rcptDate").textContent = new Date(sale.date).toLocaleString() + (sale.cashier ? " · Cashier: " + sale.cashier : "");
+  const box = $("rcptLines");
+  box.textContent = "";
+  sale.lines.forEach((l, n) => {
+    const row = document.createElement("div"); row.className = "rline";
+    const left = document.createElement("span");
+    left.textContent = (n + 1) + ". " + l.name;
+    const small = document.createElement("small");
+    small.textContent = l.qty + " × " + money(l.price);
+    left.appendChild(small);
+    const right = document.createElement("span");
+    right.textContent = money(l.price * l.qty);
+    row.append(left, right);
+    box.appendChild(row);
+  });
+  $("rcptTotal").textContent = money(sale.total);
+  const pay = $("rcptPay");
+  pay.textContent = "";
+  const payRows = [];
+  if (sale.method === "ewallet") {
+    payRows.push(["Paid by", "E-wallet"], ["Reference", sale.reference || "—"]);
+    if (sale.payNote) payRows.push(["Note", sale.payNote]);
+  } else if (typeof sale.received === "number") {          // older sales don't have these
+    payRows.push(["Amount received", money(sale.received)], ["Change", money(sale.change)]);
+  }
+  if (payRows.length) {
+    for (const [label, value] of payRows) {
+      const r = document.createElement("div"); r.className = "rline";
+      const a = document.createElement("span"); a.textContent = label;
+      const b = document.createElement("span"); b.textContent = value;
+      r.append(a, b);
+      pay.appendChild(r);
+    }
+  }
+  $("receiptDlg").showModal();
+}
+
+/* ---- Expenses: rent, electricity, delivery fees, and so on ---- */
+const EXPENSES_KEY = "pos_expenses_v1";
+let expenses = loadExpenses();
+function loadExpenses() {
+  try { return JSON.parse(localStorage.getItem(EXPENSES_KEY)) || []; }
+  catch (e) { return []; }
+}
+function saveExpenses() {
+  try { localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses)); return true; }
+  catch (e) { return false; }
+}
+
+// How much expense falls between two dates. A "monthly" expense is spread evenly over the days of its month.
+function expenseInRange(start, end) {
+  let total = 0;
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const key = dayKey(d);
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    for (const x of expenses) {
+      if (x.spread === "month") { if (x.date.slice(0, 7) === key.slice(0, 7)) total += x.amount / daysInMonth; }
+      else if (x.date === key) total += x.amount;
+    }
+  }
+  return total;
+}
+
+function addExpense() {
+  const date = $("xDate").value, amount = parseFloat($("xAmt").value);
+  const err = (t) => { $("xErr").textContent = t; };
+  if (!date) return err("Pick a date.");
+  if (isNaN(amount) || amount <= 0) return err("Enter an amount greater than 0.");
+  expenses.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date,
+                  category: $("xCat").value, note: $("xNote").value.trim(), amount: r2(amount), spread: $("xSpread").value });
+  if (!saveExpenses()) { expenses.pop(); return err("Couldn't save. Your browser may be blocking storage."); }
+  $("xAmt").value = ""; $("xNote").value = ""; err("");
+  renderExpenses();
+}
+
+function renderExpenses() {
+  if (!$("xDate").value) $("xDate").value = dayKey(new Date());
+  const now = new Date();
+  const monthTotal = expenseInRange(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  $("xTotal").textContent = "This month: " + money(r2(monthTotal)) + " in expenses";
+  const list = $("xList");
+  list.textContent = "";
+  if (!expenses.length) {
+    const p = document.createElement("p"); p.className = "empty"; p.textContent = "No expenses yet."; list.appendChild(p);
+    return;
+  }
+  for (const x of [...expenses].sort((a, b) => b.date.localeCompare(a.date))) {
+    const row = document.createElement("div"); row.className = "mrow";
+    const left = document.createElement("span");
+    left.textContent = x.category + (x.note ? " · " + x.note : "");
+    const small = document.createElement("small");
+    small.textContent = niceDate(x.date) + (x.spread === "month" ? " · spread over the month" : "");
+    left.appendChild(small);
+    const right = document.createElement("span");
+    right.style.cssText = "display:flex;gap:8px;align-items:center";
+    const amt = document.createElement("strong"); amt.textContent = money(x.amount);
+    const del = button("Delete", () => askConfirm("Delete this " + x.category.toLowerCase() + " expense of " + money(x.amount) + "?", "Delete", () => {
+      expenses = expenses.filter(e => e.id !== x.id); saveExpenses(); renderExpenses();
+    }));
+    del.className = "danger"; del.style.padding = "4px 10px";
+    right.append(amt, del);
+    row.append(left, right);
+    list.appendChild(row);
+  }
+}
+
+/* ---- Login: who is using the app, and what they may open ---- */
+// NOTE: everything here lives in this browser. It keeps honest people out, but it is not
+// real security: that needs an online account system (a later step).
+const AUTH_KEY = "pos_auth_v1", CASHIERS_KEY = "pos_cashiers_v1";
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let session = null;                 // null = logged out, or { role: "owner" }, or { role: "cashier", cashierId, name, shiftId }
+let auth = loadAuth();              // { pw: {salt, hash}, pin: {salt, hash} } once the owner account is set up
+let cashiers = loadCashiers();      // [{ id, name, active }]
+let ownerMode = "pin", failCount = 0, lockUntil = 0;
+
+const isOwner = () => !!session && session.role === "owner";
+const whoName = () => !session ? "" : isOwner() ? "Owner" : session.name;
+// What the logged-in cashier is allowed to do (the owner can do everything)
+const me = () => session && session.role === "cashier" ? cashiers.find(c => c.id === session.cashierId) : null;
+const canRefund = () => isOwner() || !!(me() && me().canRefund);
+const canEwallet = () => isOwner() || !!(me() && me().canEwallet);
+const pad4 = (n) => String(n).padStart(4, "0");
+
+// Cashiers get a new random 4-digit PIN every day. The owner can see it on the Staff tab.
+function newPin() { const a = new Uint32Array(1); crypto.getRandomValues(a); return String(a[0] % 10000).padStart(4, "0"); }
+function ensureDailyPins() {
+  const today = dayKey(new Date());
+  let changed = false;
+  for (const c of cashiers) if (c.active && c.pinDate !== today) { c.pin = newPin(); c.pinDate = today; changed = true; }
+  if (changed) saveCashiers();
+}
+
+function loadAuth() { try { return JSON.parse(localStorage.getItem(AUTH_KEY)) || null; } catch (e) { return null; } }
+function saveAuth() { try { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); return true; } catch (e) { return false; } }
+function loadCashiers() { try { return JSON.parse(localStorage.getItem(CASHIERS_KEY)) || []; } catch (e) { return []; } }
+function saveCashiers() { try { localStorage.setItem(CASHIERS_KEY, JSON.stringify(cashiers)); return true; } catch (e) { return false; } }
+
+// Passwords and PINs are never stored as typed. We keep a scrambled "hash" (with a random salt) instead.
+const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = (str) => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+async function hashSecret(secret, saltB64) {
+  const salt = saltB64 ? unb64(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 150000, hash: "SHA-256" }, key, 256);
+  return { salt: b64(salt), hash: b64(bits) };
+}
+async function checkSecret(secret, rec) { return (await hashSecret(secret, rec.salt)).hash === rec.hash; }
+
+function showPanel(id) { for (const p of ["hChoice", "hSetup", "hOwnerLogin", "hCashierLogin"]) $(p).hidden = p !== id; }
+function showHome(msg) {
+  showTab("home");
+  showPanel("hChoice");
+  $("homeMsg").textContent = msg || "";
+}
+
+function applyRole() {
+  $("who").textContent = isOwner() ? "Owner" : "Cashier: " + session.name;
+  $("tabHome").hidden = !isOwner();     // a cashier's home is the checkout
+  for (const id of ["tabItems", "tabSales", "tabExpenses", "tabStaff"]) $(id).hidden = !isOwner();
+  $("tabRefunds").hidden = !canRefund();
+}
+
+function logout(msg) {
+  session = null;
+  stopLive(); cart = []; $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = ""; setPayMethod("cash"); renderCart();
+  showHome(msg);
+}
+
+// ----- owner: first-time setup and login -----
+async function doSetup() {
+  const pw = $("suPw").value, pin = $("suPin").value, err = (t) => { $("suErr").textContent = t; };
+  if (pw.length < 8) return err("The password needs at least 8 characters.");
+  if (pw !== $("suPw2").value) return err("The two passwords don't match.");
+  if (!/^\d{4,6}$/.test(pin)) return err("The PIN must be 4 to 6 digits.");
+  if (pin !== $("suPin2").value) return err("The two PINs don't match.");
+  try { auth = { pw: await hashSecret(pw), pin: await hashSecret(pin) }; }
+  catch (e) { auth = null; return err("This browser can't protect passwords on this page. Open it over https."); }
+  if (!saveAuth()) { auth = null; return err("Couldn't save. Your browser may be blocking storage."); }
+  for (const id of ["suPw", "suPw2", "suPin", "suPin2"]) $(id).value = "";
+  err("");
+  session = { role: "owner" };
+  applyRole(); showTab("dashboard");
+}
+
+function setOwnerMode(m) {
+  ownerMode = m;
+  $("olLabel").textContent = m === "pin" ? "PIN" : "Password";
+  $("olInput").inputMode = m === "pin" ? "numeric" : "text";
+  $("olInput").value = ""; $("olMsg").textContent = "";
+  $("olSwitch").textContent = m === "pin" ? "Use password instead" : "Use PIN instead";
+  $("olForgot").hidden = m === "pin"; $("olForgotText").hidden = true;
+}
+
+async function doOwnerLogin() {
+  const msg = (t) => { $("olMsg").textContent = t; };
+  const wait = Math.ceil((lockUntil - Date.now()) / 1000);
+  if (wait > 0) return msg("Too many wrong tries. Wait " + wait + " seconds.");
+  const secret = $("olInput").value;
+  if (!secret || !auth) return;
+  let ok = false;
+  try { ok = await checkSecret(secret, ownerMode === "pin" ? auth.pin : auth.pw); }
+  catch (e) { return msg("This browser can't check passwords on this page."); }
+  $("olInput").value = "";
+  if (!ok) {
+    failCount++;
+    if (failCount >= 5) { failCount = 0; lockUntil = Date.now() + 30000; return msg("Too many wrong tries. Wait 30 seconds."); }
+    return msg("Wrong " + (ownerMode === "pin" ? "PIN" : "password") + ".");
+  }
+  failCount = 0; msg("");
+  session = { role: "owner" };
+  applyRole(); showTab("dashboard");
+}
+
+// ----- cashier: pick a registered profile, take a selfie, enter opening cash -----
+function refreshCashierPanel() {
+  ensureDailyPins();
+  const active = cashiers.filter(c => c.active);
+  const sel = $("hCashierSel");
+  const keep = sel.value;
+  sel.textContent = "";
+  active.forEach(c => { const o = document.createElement("option"); o.value = c.id; o.textContent = c.name; sel.appendChild(o); });
+  if (active.some(c => c.id === keep)) sel.value = keep;
+  sel.hidden = active.length === 0;
+  for (const id of ["hStartBox", "hStartShift", "hResumeBtn"]) $(id).hidden = true;
+  $("hCashErr").textContent = "";
+  const open = activeShift();
+  if (!active.length) { $("hCashMsg").textContent = "No cashier profiles yet. Ask the owner to add you under Staff."; return; }
+  if (open && open.cashierId === sel.value) {
+    $("hCashMsg").textContent = "Your shift has been open since " + new Date(open.openedAt).toLocaleString() + ".";
+    $("hResumeBtn").hidden = false;
+  } else if (open) {
+    $("hCashMsg").textContent = open.cashier + "'s shift is still open. Their cash must be counted and the shift closed before another shift can start.";
+  } else {
+    $("hCashMsg").textContent = "";
+    $("hStartBox").hidden = false; $("hStartShift").hidden = false;
+  }
+}
+
+// Checks today's PIN for this cashier. Returns an error message, or "" when it is correct.
+function checkCashierPin(c) {
+  const wait = Math.ceil((lockUntil - Date.now()) / 1000);
+  if (wait > 0) return "Too many wrong tries. Wait " + wait + " seconds.";
+  ensureDailyPins();
+  const entered = $("hCashierPin").value;
+  $("hCashierPin").value = "";
+  if (entered !== c.pin) {
+    failCount++;
+    if (failCount >= 5) { failCount = 0; lockUntil = Date.now() + 30000; return "Too many wrong tries. Wait 30 seconds."; }
+    return "Wrong PIN.";
+  }
+  failCount = 0;
+  return "";
+}
+
+function doStartShift() {
+  const err = (t) => { $("hCashErr").textContent = t; };
+  const c = cashiers.find(x => x.id === $("hCashierSel").value && x.active);
+  const f = parseFloat($("hFloat").value);
+  if (!c) return err("Choose your name from the list.");
+  if (isNaN(f) || f < 0) return err("Enter the opening cash amount (0 or more).");
+  if (activeShift()) return err("Another shift is still open.");
+  const bad = checkCashierPin(c);
+  if (bad) return err(bad);
+  const sh = { id: uid(), openedAt: new Date().toISOString(), closedAt: null, cashierId: c.id, cashier: c.name, float: r2(f), payouts: [] };
+  shifts.push(sh);
+  if (!saveShifts()) { shifts.pop(); return err("Couldn't save. The browser storage may be full."); }
+  session = { role: "cashier", cashierId: c.id, name: c.name, shiftId: sh.id };
+  $("hFloat").value = ""; err("");
+  applyRole(); showTab("checkout");
+}
+
+function resumeShift() {
+  const sh = activeShift();
+  const c = cashiers.find(x => x.id === $("hCashierSel").value && x.active);
+  if (!sh || !c || sh.cashierId !== c.id) return;
+  const bad = checkCashierPin(c);
+  if (bad) { $("hCashErr").textContent = bad; return; }
+  session = { role: "cashier", cashierId: sh.cashierId, name: sh.cashier, shiftId: sh.id };
+  applyRole(); showTab("checkout");
+}
+
+// ----- Staff tab (owner only) -----
+let revealedPins = new Set();
+
+function renderStaff() {
+  ensureDailyPins();
+  $("cErr").textContent = "";
+  const list = $("cList");
+  list.textContent = "";
+  if (!cashiers.length) {
+    const p = document.createElement("p"); p.className = "empty"; p.textContent = "No cashiers yet. Add one above."; list.appendChild(p);
+  }
+  for (const c of cashiers) {
+    const card = document.createElement("div"); card.className = "item";
+    const top = document.createElement("div"); top.className = "item-top";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = c.name;
+    const status = document.createElement("span"); status.className = "meta";
+    status.textContent = (c.active ? "Active" : "Deactivated") + " · " + shifts.filter(x => x.cashierId === c.id).length + " shifts";
+    top.append(name, status);
+    card.appendChild(top);
+
+    if (c.active) {
+      const pin = document.createElement("div"); pin.className = "meta";
+      pin.textContent = "Today's PIN: " + (revealedPins.has(c.id) ? c.pin : "••••") + "  (changes every day)";
+      card.appendChild(pin);
+      for (const [label, key] of [["Can process refunds", "canRefund"], ["Can accept e-wallet payments", "canEwallet"]]) {
+        const l = document.createElement("label"); l.style.cssText = "display:flex;gap:8px;align-items:center;color:var(--text);margin:8px 0 0";
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.style.width = "auto"; cb.checked = !!c[key];
+        cb.onchange = () => { c[key] = cb.checked; saveCashiers(); };
+        l.append(cb, label);
+        card.appendChild(l);
+      }
+    }
+
+    const actions = document.createElement("div"); actions.className = "actions";
+    if (c.active) {
+      actions.append(
+        button(revealedPins.has(c.id) ? "Hide PIN" : "Show PIN", () => {
+          if (revealedPins.has(c.id)) revealedPins.delete(c.id); else revealedPins.add(c.id);
+          renderStaff();
+        }),
+        button("New PIN", () => { c.pin = newPin(); c.pinDate = dayKey(new Date()); saveCashiers(); renderStaff(); }));
+    }
+    const toggle = button(c.active ? "Deactivate" : "Reactivate", () => {
+      const open = activeShift();
+      if (c.active && open && open.cashierId === c.id) { $("cErr").textContent = c.name + " has a shift open. Close it first."; return; }
+      c.active = !c.active; saveCashiers(); renderStaff();
+    });
+    if (c.active) toggle.className = "danger";
+    actions.appendChild(toggle);
+    card.appendChild(actions);
+    list.appendChild(card);
+  }
+}
+
+function addCashier() {
+  const name = $("cName").value.trim();
+  if (!name) { $("cErr").textContent = "Enter the cashier's name."; return; }
+  if (cashiers.some(c => c.name.toLowerCase() === name.toLowerCase())) { $("cErr").textContent = "A cashier with that name already exists."; return; }
+  cashiers.push({ id: uid(), name, active: true, canRefund: false, canEwallet: false, pin: newPin(), pinDate: dayKey(new Date()) });
+  if (!saveCashiers()) { cashiers.pop(); $("cErr").textContent = "Couldn't save."; return; }
+  $("cName").value = "";
+  renderStaff();
+}
+
+async function changeSecret(kind) {
+  const msg = (t, ok) => { $("secMsg").textContent = t; $("secMsg").className = ok ? "meta" : "error"; };
+  const value = $(kind === "pin" ? "secNewPin" : "secNewPass").value;
+  if (kind === "pin" && !/^\d{4,6}$/.test(value)) return msg("The PIN must be 4 to 6 digits.");
+  if (kind === "pass" && value.length < 8) return msg("The password needs at least 8 characters.");
+  try {
+    if (!(await checkSecret($("secPass").value, auth.pw))) return msg("The current password is wrong.");
+    auth[kind === "pin" ? "pin" : "pw"] = await hashSecret(value);
+  } catch (e) { return msg("This browser can't protect passwords on this page."); }
+  saveAuth();
+  $("secNewPin").value = ""; $("secNewPass").value = ""; $("secPass").value = "";
+  msg(kind === "pin" ? "PIN changed." : "Password changed.", true);
+}
+
+/* ---- Cash drawer: shifts ---- */
+const SHIFTS_KEY = "pos_shifts_v1", REFUNDS_KEY = "pos_refunds_v1";
+let shifts = loadShifts();
+let refunds = loadRefunds();
+let justClosedId = null;      // the shift that was just closed, so its result can be shown
+function loadShifts() {
+  try { return (JSON.parse(localStorage.getItem(SHIFTS_KEY)) || []).map(sh => { delete sh.selfie; return sh; }); }
+  catch (e) { return []; }
+}
+function saveShifts() {
+  try { localStorage.setItem(SHIFTS_KEY, JSON.stringify(shifts)); return true; }
+  catch (e) { return false; }
+}
+function loadRefunds() { try { return JSON.parse(localStorage.getItem(REFUNDS_KEY)) || []; } catch (e) { return []; } }
+function saveRefunds() { try { localStorage.setItem(REFUNDS_KEY, JSON.stringify(refunds)); return true; } catch (e) { return false; } }
+
+const activeShift = () => shifts.find(sh => !sh.closedAt) || null;     // only one shift is open at a time
+
+// The shift that a new sale or refund belongs to: the cashier's own shift, or the owner's shift if the owner started one
+function currentShiftId() {
+  if (!isOwner()) return session.shiftId;
+  const open = activeShift();
+  return open && open.cashierId === null ? open.id : null;
+}
+
+const isCashPayment = (x) => x.method !== "ewallet";     // older sales had no method: they were cash
+
+// Cash in the drawer = starting float + cash sales - cash refunds - payouts. E-wallet money never enters the drawer.
+function shiftFigures(sh) {
+  const sold = sales.filter(x => x.shiftId === sh.id);
+  const cashSold = sold.filter(isCashPayment), ewSold = sold.filter(x => !isCashPayment(x));
+  const rf = refunds.filter(x => x.shiftId === sh.id);
+  const cashRf = rf.filter(isCashPayment);
+  const sum = (arr, key) => r2(arr.reduce((t, x) => t + x[key], 0));
+  const cashSales = sum(cashSold, "total"), cashRefunds = sum(cashRf, "amount");
+  const payouts = sum(sh.payouts, "amount");
+  return { count: sold.length, cashCount: cashSold.length, cashSales, ewCount: ewSold.length, ewSales: sum(ewSold, "total"),
+           refundCount: rf.length, cashRefundCount: cashRf.length, cashRefunds, payouts,
+           expected: r2(sh.float + cashSales - cashRefunds - payouts) };
+}
+
+const diffText = (d) => d === 0 ? "Balanced" : d < 0 ? "Short by " + money(-d) : "Over by " + money(d);
+function colorDiff(el, d) {
+  if (d < 0) el.className = "low";
+  else if (d > 0) el.style.color = "var(--chart2)";
+}
+function makeStat(label, value) {
+  const box = document.createElement("div"); box.className = "stat";
+  const small = document.createElement("small"); small.textContent = label;
+  const strong = document.createElement("strong"); strong.textContent = value;
+  box.append(small, strong);
+  return box;
+}
+function makeLine(label, value) {
+  const row = document.createElement("div"); row.className = "rline";
+  const a = document.createElement("span"); a.textContent = label;
+  const b = document.createElement("span"); b.textContent = value;
+  row.append(a, b);
+  return row;
+}
+
+function startOwnerShift() {
+  const f = parseFloat($("dFloat").value);
+  if (isNaN(f) || f < 0) { $("dErr").textContent = "Enter the opening cash amount (0 or more)."; return; }
+  if (activeShift()) return;
+  shifts.push({ id: uid(), openedAt: new Date().toISOString(), closedAt: null, cashierId: null, cashier: "Owner", float: r2(f), payouts: [] });
+  if (!saveShifts()) { shifts.pop(); $("dErr").textContent = "Couldn't save. The browser storage may be full."; return; }
+  justClosedId = null; $("dFloat").value = "";
+  renderDrawer();
+}
+
+function addPayout() {
+  const sh = activeShift(); if (!sh) return;
+  const amount = parseFloat($("dPayAmt").value);
+  if (isNaN(amount) || amount <= 0) { $("dPayErr").textContent = "Enter an amount greater than 0."; return; }
+  sh.payouts.push({ id: uid(), time: new Date().toISOString(), amount: r2(amount), note: $("dPayNote").value.trim(), by: whoName() });
+  saveShifts();
+  $("dPayAmt").value = ""; $("dPayNote").value = "";
+  renderDrawer();
+}
+
+function closeShift() {
+  const sh = activeShift(); if (!sh) return;
+  if (!isOwner() && sh.id !== session.shiftId) return;
+  const actual = parseFloat($("dActual").value);
+  if (isNaN(actual) || actual < 0) { $("dCloseErr").textContent = "Enter the cash you counted (0 or more)."; return; }
+  const f = shiftFigures(sh);
+  askConfirm(isOwner() ? "Close this shift? Expected " + money(f.expected) + ", counted " + money(r2(actual)) + "."
+                       : "Close your shift with " + money(r2(actual)) + " counted?", "Yes", () => {
+    // Save the final numbers with the shift, so the history stays the same later
+    Object.assign(sh, { closedAt: new Date().toISOString(), saleCount: f.count, cashCount: f.cashCount, cashSales: f.cashSales,
+                        ewCount: f.ewCount, ewSales: f.ewSales, cashRefunds: f.cashRefunds, refundCount: f.refundCount,
+                        payoutTotal: f.payouts, expected: f.expected, actual: r2(actual), difference: r2(actual - f.expected),
+                        closeNote: $("dCloseNote").value.trim(), closedBy: whoName() });
+    saveShifts();
+    justClosedId = sh.id;
+    $("dActual").value = ""; $("dCloseNote").value = "";
+    if (!isOwner()) { logout("Shift closed. Your cash count of " + money(r2(actual)) + " was recorded. Thank you!"); return; }
+    renderDrawer();
+  });
+}
+
+function renderDrawer() {
+  const sh = activeShift();
+  $("dStart").hidden = !(isOwner() && !sh);
+  $("dOpen").hidden = !sh;
+  $("dHistoryBox").hidden = !isOwner();     // only the owner reviews history and differences
+  for (const id of ["dErr", "dPayErr", "dCloseErr"]) $(id).textContent = "";
+
+  if (sh) {
+    $("dSub").textContent = "Shift open since " + new Date(sh.openedAt).toLocaleString() + (sh.cashier ? " · " + sh.cashier : "");
+    const f = shiftFigures(sh);
+    const stats = $("dStats");
+    stats.textContent = "";
+    if (isOwner()) {
+      stats.append(makeStat("Starting float", money(sh.float)), makeStat("Cash sales (" + f.cashCount + ")", money(f.cashSales)),
+                   makeStat("Cash refunds (" + f.cashRefundCount + ")", money(f.cashRefunds)), makeStat("Cash payouts", money(f.payouts)),
+                   makeStat("E-wallet sales (" + f.ewCount + ")", money(f.ewSales)), makeStat("Expected cash in drawer", money(f.expected)));
+    } else {   // cashiers count the drawer without seeing the expected amount
+      stats.append(makeStat("Starting float", money(sh.float)), makeStat("Sales made", String(f.count)),
+                   makeStat("Refunds", String(f.refundCount)), makeStat("Cash payouts", money(f.payouts)));
+    }
+
+    const list = $("dPayouts");
+    list.textContent = "";
+    for (const pay of [...sh.payouts].reverse()) {
+      const row = document.createElement("div"); row.className = "mrow";
+      const left = document.createElement("span"); left.textContent = pay.note || "Payout";
+      const small = document.createElement("small"); small.textContent = new Date(pay.time).toLocaleTimeString() + (pay.by ? " · " + pay.by : "");
+      left.appendChild(small);
+      const right = document.createElement("span"); right.style.cssText = "display:flex;gap:8px;align-items:center";
+      const amt = document.createElement("strong"); amt.textContent = money(pay.amount);
+      const del = button("Remove", () => askConfirm("Remove this " + money(pay.amount) + " payout?", "Remove", () => {
+        sh.payouts = sh.payouts.filter(x => x.id !== pay.id); saveShifts(); renderDrawer();
+      }));
+      del.className = "danger"; del.style.padding = "4px 10px";
+      right.append(amt, del);
+      row.append(left, right);
+      list.appendChild(row);
+    }
+  } else {
+    $("dSub").textContent = isOwner() ? "No shift is open. Start one below, or a cashier can start theirs from the home screen." : "No shift is open.";
+  }
+
+  // Result of the shift that was just closed
+  const res = $("dResult");
+  res.textContent = "";
+  const just = shifts.find(x => x.id === justClosedId);
+  if (just && !sh) {
+    const card = document.createElement("div"); card.className = "item";
+    const h = document.createElement("h2"); h.className = "sec"; h.style.marginTop = "0"; h.textContent = "Shift closed";
+    const grid = document.createElement("div"); grid.className = "stats";
+    const d = makeStat("Difference", diffText(just.difference));
+    colorDiff(d.querySelector("strong"), just.difference);
+    grid.append(makeStat("Expected", money(just.expected)), makeStat("Actual counted", money(just.actual)), d);
+    const note = document.createElement("p"); note.className = "meta"; note.style.margin = "0";
+    note.textContent = "A difference only shows that the count and the records don't match. It doesn't say why. Wrong change, miscounts, and payouts that weren't recorded are common causes, so check this shift's sales, refunds and payouts first.";
+    card.append(h, grid, note);
+    res.appendChild(card);
+  }
+
+  // History of closed shifts, newest first (owner only)
+  const closed = shifts.filter(x => x.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt));
+  const hist = $("dHistory");
+  hist.textContent = "";
+  let balanced = 0, short = 0, over = 0, net = 0;
+  for (const x of closed) {
+    if (x.difference === 0) balanced++; else if (x.difference < 0) short++; else over++;
+    net += x.difference;
+
+    const box = document.createElement("details"); box.className = "item";
+    const sum = document.createElement("summary");
+    sum.style.cssText = "display:flex;justify-content:space-between;gap:12px;cursor:pointer;list-style-position:inside";
+    const left = document.createElement("span");
+    left.textContent = new Date(x.openedAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + (x.cashier ? " · " + x.cashier : "");
+    const right = document.createElement("strong"); right.textContent = diffText(x.difference);
+    colorDiff(right, x.difference);
+    sum.append(left, right);
+    box.appendChild(sum);
+    const body = document.createElement("div"); body.style.marginTop = "8px";
+    body.append(makeLine("Cashier", x.cashier || "—"), makeLine("Opened", new Date(x.openedAt).toLocaleString()),
+                makeLine("Closed", new Date(x.closedAt).toLocaleString()), makeLine("Closed by", x.closedBy || "—"),
+                makeLine("Starting float", money(x.float)), makeLine("Cash sales (" + (x.cashCount ?? x.saleCount) + ")", money(x.cashSales)),
+                makeLine("Cash refunds", money(x.cashRefunds || 0)), makeLine("Cash payouts", money(x.payoutTotal)),
+                makeLine("Expected", money(x.expected)), makeLine("Actual counted", money(x.actual)),
+                makeLine("Difference", diffText(x.difference)),
+                makeLine("E-wallet sales (" + (x.ewCount || 0) + ", not in the drawer)", money(x.ewSales || 0)));
+    for (const pay of x.payouts) body.appendChild(makeLine("Payout" + (pay.by ? " by " + pay.by : "") + ": " + (pay.note || "no reason given"), money(pay.amount)));
+    for (const r of refunds.filter(r => r.shiftId === x.id)) {
+      body.appendChild(makeLine("Refund #" + pad4(r.no) + " (receipt #" + pad4(r.saleNo) + ", " + (isCashPayment(r) ? "cash" : "e-wallet") + ") by " + r.by + ": " + r.reason, money(r.amount)));
+    }
+    if (x.closeNote) { const n = document.createElement("p"); n.className = "meta"; n.textContent = "Note: " + x.closeNote; body.appendChild(n); }
+    box.appendChild(body);
+    hist.appendChild(box);
+  }
+  $("dSummary").textContent = closed.length
+    ? closed.length + (closed.length === 1 ? " closed shift" : " closed shifts") + " · " + balanced + " balanced · " + short + " short · " + over + " over · net difference " + money(r2(net)) + ". A difference doesn't show what caused it."
+    : "No closed shifts yet.";
+}
+
+/* ---- Refunds ---- */
+let refundSale = null;      // the receipt being refunded
+let rfQty = [];             // how many of each line to refund
+const refundedQty = (saleNo, idx) => refunds.filter(r => r.saleNo === saleNo)
+  .reduce((t, r) => t + r.lines.filter(l => l.lineIndex === idx).reduce((a, l) => a + l.qty, 0), 0);
+
+function updateRefundTotal() {
+  const total = refundSale ? refundSale.lines.reduce((t, l, i) => t + (rfQty[i] || 0) * l.price, 0) : 0;
+  $("rfTotal").textContent = money(r2(total));
+}
+
+function renderRefunds() {
+  if (!canRefund()) return;
+  const picking = !refundSale;
+  $("rfPick").hidden = !picking; $("rfForm").hidden = picking;
+  $("rfHistoryBox").hidden = !(picking && isOwner());
+
+  if (picking) {
+    const q = $("rfSearch").value.replace(/[^0-9]/g, "").replace(/^0+/, "");
+    const list = $("rfList");
+    list.textContent = "";
+    const found = [...sales].reverse().filter(x => !q || String(x.no).includes(q)).slice(0, 20);
+    if (!found.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "No receipts found."; list.appendChild(p); }
+    for (const x of found) {
+      const row = document.createElement("button"); row.className = "srow";
+      const left = document.createElement("span"); left.textContent = "#" + pad4(x.no);
+      const small = document.createElement("small");
+      small.textContent = new Date(x.date).toLocaleString() + " · " + (isCashPayment(x) ? "Cash" : "E-wallet") + (x.cashier ? " · " + x.cashier : "");
+      left.appendChild(small);
+      const right = document.createElement("strong"); right.textContent = money(x.total);
+      row.append(left, right);
+      row.onclick = () => {
+        refundSale = x; rfQty = x.lines.map(() => 0);
+        $("rfMsg").textContent = ""; $("rfErr").textContent = "";
+        $("rfReason").value = ""; $("rfNote").value = ""; $("rfRef").value = ""; $("rfRestock").checked = true;
+        renderRefunds();
+      };
+      list.appendChild(row);
+    }
+
+    // Refund history (owner only)
+    const hist = $("rfHistory");
+    hist.textContent = "";
+    if (!refunds.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "No refunds yet."; hist.appendChild(p); }
+    for (const r of [...refunds].reverse().slice(0, 20)) {
+      const row = document.createElement("div"); row.className = "mrow";
+      const left = document.createElement("span");
+      left.textContent = "Refund #" + pad4(r.no) + " · receipt #" + pad4(r.saleNo);
+      const small = document.createElement("small");
+      small.textContent = new Date(r.date).toLocaleString() + " · " + r.by + " · " + r.reason + " · " + (isCashPayment(r) ? "cash" : "e-wallet ref " + r.reference);
+      left.appendChild(small);
+      const right = document.createElement("strong"); right.textContent = money(r.amount);
+      row.append(left, right);
+      hist.appendChild(row);
+    }
+    return;
+  }
+
+  // The form for the chosen receipt
+  const sale = refundSale;
+  $("rfHead").textContent = "Receipt #" + pad4(sale.no) + " · " + money(sale.total);
+  $("rfSub").textContent = new Date(sale.date).toLocaleString() + " · paid by " +
+    (isCashPayment(sale) ? "cash" : "e-wallet (ref " + sale.reference + ")") + (sale.cashier ? " · " + sale.cashier : "");
+  $("rfEw").hidden = isCashPayment(sale);
+  const box = $("rfLines");
+  box.textContent = "";
+  sale.lines.forEach((l, idx) => {
+    const done = refundedQty(sale.no, idx), left = l.qty - done;
+    const card = document.createElement("div"); card.className = "item";
+    const top = document.createElement("div"); top.className = "item-top";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = (idx + 1) + ". " + l.name;
+    const price = document.createElement("span"); price.className = "price"; price.textContent = money(l.price) + " each";
+    top.append(name, price);
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.textContent = "Sold " + l.qty + (done ? " · already refunded " + done : "");
+    const input = document.createElement("input");
+    input.type = "number"; input.inputMode = "numeric"; input.min = 0; input.max = left; input.value = rfQty[idx] || 0;
+    input.style.cssText = "width:90px;margin-top:8px"; input.disabled = left <= 0;
+    input.oninput = () => { rfQty[idx] = Math.max(0, Math.min(left, parseInt(input.value, 10) || 0)); updateRefundTotal(); };
+    const hint = document.createElement("span"); hint.className = "meta";
+    hint.textContent = left > 0 ? "  quantity to refund (up to " + left + ")" : "  nothing left to refund";
+    card.append(top, meta, input, hint);
+    box.appendChild(card);
+  });
+  updateRefundTotal();
+}
+
+// Puts refunded goods back on the shelf, on the earliest expiration date the item already has
+function returnToStock(l) {
+  const it = items.find(i => i.id === l.id) || items.find(i => (l.barcode && i.barcode === l.barcode) || i.name === l.name);
+  if (!it) return false;
+  if (it.batches && it.batches.length) {
+    const date = it.batches.map(b => b.date).sort()[0];
+    const batch = { date, qty: l.qty };
+    if (typeof l.cost === "number") batch.cost = l.cost;
+    it.batches.push(batch);
+    it.stock = it.batches.reduce((t, b) => t + b.qty, 0);
+  } else it.stock += l.qty;
+  return true;
+}
+
+function processRefund() {
+  const sale = refundSale;
+  const err = (t) => { $("rfErr").textContent = t; };
+  if (!sale || !canRefund()) return;
+  const lines = [];
+  sale.lines.forEach((l, idx) => {
+    const q = rfQty[idx] || 0;
+    if (q > 0) lines.push({ lineIndex: idx, id: l.id || null, name: l.name, barcode: l.barcode, price: l.price, cost: l.cost, qty: q });
+  });
+  if (!lines.length) return err("Enter the quantity to refund for at least one item.");
+  for (const l of lines) if (l.qty > sale.lines[l.lineIndex].qty - refundedQty(sale.no, l.lineIndex)) return err("You can't refund more than was sold.");
+  const reason = $("rfReason").value;
+  if (!reason) return err("Choose a reason for the refund.");
+  const ewallet = !isCashPayment(sale);
+  const reference = $("rfRef").value.trim();
+  if (ewallet && !reference) return err("Enter the e-wallet refund reference number.");
+  if (ewallet && !canEwallet()) return err("E-wallet refunds are not allowed for your profile.");
+  const amount = r2(lines.reduce((t, l) => t + l.price * l.qty, 0));
+  const restock = $("rfRestock").checked;
+
+  askConfirm("Refund " + money(amount) + " for receipt #" + pad4(sale.no) + (ewallet ? " to the e-wallet?" : " in cash?"), "Refund", () => {
+    const no = refunds.length ? Math.max(...refunds.map(x => x.no)) + 1 : 1;
+    const rf = { id: uid(), no, date: new Date().toISOString(), saleNo: sale.no, method: ewallet ? "ewallet" : "cash", reference,
+                 reason, note: $("rfNote").value.trim(), restock, lines, amount, shiftId: currentShiftId(),
+                 cashierId: isOwner() ? null : session.cashierId, by: whoName() };
+    refunds.push(rf);
+    if (!saveRefunds()) { refunds.pop(); return err("Couldn't save the refund. Nothing was changed."); }
+    let missing = 0;
+    if (restock) { for (const l of lines) if (!returnToStock(l)) missing++; saveItems(); render(); }
+    refundSale = null;
+    $("rfSearch").value = "";
+    renderRefunds();
+    $("rfMsg").textContent = "Refund #" + pad4(no) + " recorded: " + money(amount) + ". " +
+      (ewallet ? "Refunded to the e-wallet (reference " + reference + ")." : "Give the customer " + money(amount) + " in cash.") +
+      (missing ? " " + missing + " item(s) no longer exist, so they weren't returned to stock." : "");
+  });
+}
+
+/* ---- Sales tab: daily/weekly/monthly revenue and profit, chart, best sellers, receipts ---- */
+let salesMode = "month";     // "week" or "month"
+let salesPeriod = null;      // the period picked in the dropdown (null = the newest one)
+
+const pad = (n) => String(n).padStart(2, "0");
+const r2 = (n) => Math.round(n * 100) / 100;
+const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const shortDay = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+// Which day, week or month does a date belong to? Weeks start on Monday.
+function periodOf(date, mode) {
+  const d = new Date(date);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (mode === "day") {
+    return { key: dayKey(day), start: day, end: day, short: shortDay(day),
+             label: day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) };
+  }
+  if (mode === "month") {
+    return { key: d.getFullYear() + "-" + pad(d.getMonth() + 1),
+             start: new Date(d.getFullYear(), d.getMonth(), 1), end: new Date(d.getFullYear(), d.getMonth() + 1, 0),
+             label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+             short: d.toLocaleDateString(undefined, { month: "short", year: "numeric" }) };
+  }
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  return { key: dayKey(start), start, end, short: shortDay(start),
+           label: shortDay(start) + " – " + shortDay(end) + ", " + end.getFullYear() };
+}
+
+// Sale lines remember the item's id when they can. Older ones are matched by barcode or name.
+function lineKey(line) {
+  if (line.id) return line.id;
+  const match = items.find(i => (line.barcode && i.barcode === line.barcode) || i.name === line.name);
+  return match ? match.id : (line.barcode || line.name);
+}
+
+// Add up every sale into periods (oldest first): revenue, cost of goods, profit, expenses, per-item totals
+function buildPeriods(mode) {
+  const map = {};
+  const get = (date) => {
+    const p = periodOf(date, mode);
+    return map[p.key] || (map[p.key] = { ...p, revenue: 0, cogs: 0, profit: 0, count: 0, units: 0, noCost: false, refundTotal: 0, refundCount: 0, byItem: {} });
+  };
+  for (const sale of sales) {
+    const e = get(sale.date);
+    e.revenue += sale.total; e.count++;
+    for (const l of sale.lines) {
+      const k = lineKey(l);
+      const row = e.byItem[k] || (e.byItem[k] = { name: l.name, units: 0, revenue: 0, profit: 0 });
+      row.units += l.qty; row.revenue += l.price * l.qty; e.units += l.qty;
+      if (typeof l.cost === "number") {
+        const c = l.cost * l.qty, pr = l.price * l.qty - c;
+        e.cogs += c; e.profit += pr; row.profit += pr;
+      } else e.noCost = true;
+    }
+  }
+  // Refunds come off revenue in the period they happen. Goods put back in stock also take their cost back out;
+  // goods that are not returned keep their cost, so the whole refund hits profit.
+  for (const rf of refunds) {
+    const e = get(rf.date);
+    e.revenue -= rf.amount; e.refundTotal += rf.amount; e.refundCount++;
+    for (const l of rf.lines) {
+      const k = lineKey({ id: l.id, barcode: l.barcode, name: l.name });
+      const row = e.byItem[k] || (e.byItem[k] = { name: l.name, units: 0, revenue: 0, profit: 0 });
+      row.units -= l.qty; row.revenue -= l.price * l.qty; e.units -= l.qty;
+      if (typeof l.cost === "number") {
+        const lost = rf.restock ? l.price * l.qty - l.cost * l.qty : l.price * l.qty;
+        if (rf.restock) e.cogs -= l.cost * l.qty;
+        e.profit -= lost; row.profit -= lost;
+      }
+    }
+  }
+  for (const x of expenses) get(x.date + "T12:00:00");   // periods that only have expenses should show up too
+  const list = Object.keys(map).sort().map(k => map[k]);
+  for (const e of list) { e.expenses = expenseInRange(e.start, e.end); e.net = e.profit - e.expenses; }
+  return list;
+}
+
+function renderChart(periods, cur, boxId = "chart", titleId = "chartTitle", mode = salesMode) {
+  const box = $(boxId);
+  const data = periods.slice(-12);                      // the latest 12 weeks or months
+  $(titleId).textContent = "Revenue and net profit (last " + data.length + ({ day: " days)", week: " weeks)", month: " months)" })[mode];
+  const maxV = Math.max(1, ...data.map(p => Math.max(p.revenue, p.net)));
+  const minV = Math.min(0, ...data.map(p => p.net));
+  const W = Math.max(320, data.length * 64 + 56), H = 200, top = 12, bottom = 36, left = 48;
+  const range = maxV - minV, plotH = H - top - bottom;
+  const y = (v) => top + (maxV - v) / range * plotH;
+  let g = "";
+  for (let i = 0; i <= 3; i++) {                        // grid lines with amounts
+    const v = minV + range * i / 3;
+    g += `<line x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>` +
+         `<text x="${left - 6}" y="${y(v) + 3}" text-anchor="end" fill="var(--muted)" font-size="10">${CURRENCY}${Math.round(v)}</text>`;
+  }
+  data.forEach((p, n) => {
+    const x = left + n * 64 + 8;
+    const bar = (v, dx, color) => {
+      const y0 = y(Math.max(v, 0)), y1 = y(Math.min(v, 0));
+      return `<rect x="${x + dx}" y="${y0}" width="22" height="${Math.max(1, y1 - y0)}" rx="3" fill="${color}"/>`;
+    };
+    g += bar(p.revenue, 0, "var(--accent)") + bar(p.net, 24, "var(--chart2)");
+    g += `<text x="${x + 23}" y="${H - bottom + 14}" text-anchor="middle" fill="var(--${p === cur ? "text" : "muted"})" font-size="10" font-weight="${p === cur ? 700 : 400}">${p.short}</text>`;
+  });
+  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Revenue and profit per period">${g}</svg>`;
+  box.scrollLeft = box.scrollWidth;                     // show the newest periods first
+}
+
+function renderSales() {
+  $("salesCount").textContent = sales.length + (sales.length === 1 ? " sale" : " sales") + " recorded";
+  $("modeDay").className = salesMode === "day" ? "primary" : "";
+  $("modeWeek").className = salesMode === "week" ? "primary" : "";
+  $("modeMonth").className = salesMode === "month" ? "primary" : "";
+
+  const periods = buildPeriods(salesMode);
+  const sel = $("periodSel");
+  sel.textContent = "";
+  [...periods].reverse().forEach(p => {                 // newest first in the dropdown
+    const o = document.createElement("option"); o.value = p.key; o.textContent = p.label; sel.appendChild(o);
+  });
+  if (!periods.some(p => p.key === salesPeriod)) salesPeriod = periods.length ? periods[periods.length - 1].key : null;
+  sel.value = salesPeriod || "";
+  const cur = periods.find(p => p.key === salesPeriod);
+
+  for (const id of ["stats", "chart", "extremes", "profitX", "itemsSold"]) $(id).textContent = "";
+
+  if (!cur) {
+    const p = document.createElement("p"); p.className = "empty";
+    p.textContent = "No sales yet. Finish a sale at Checkout and it will show up here.";
+    $("stats").appendChild(p);
+  } else {
+    // Totals for the chosen week or month
+    const grid = document.createElement("div"); grid.className = "stats";
+    for (const [label, value] of [["Revenue", money(r2(cur.revenue))], ["Cost of goods sold", money(r2(cur.cogs))],
+                                  ["Gross profit", money(r2(cur.profit))], ["Expenses", money(r2(cur.expenses))],
+                                  ["Estimated net profit", money(r2(cur.net))], [cur.count + (cur.count === 1 ? " sale" : " sales"), cur.units + " items sold"]]) {
+      const box = document.createElement("div"); box.className = "stat";
+      const small = document.createElement("small"); small.textContent = label;
+      const strong = document.createElement("strong"); strong.textContent = value;
+      if (label === "Estimated net profit" && cur.net < 0) strong.className = "low";
+      box.append(small, strong); grid.appendChild(box);
+    }
+    $("stats").appendChild(grid);
+    if (cur.noCost) {
+      const note = document.createElement("p"); note.className = "meta"; note.style.margin = "0";
+      note.textContent = "Profit leaves out sales made before supplier prices were saved.";
+      $("stats").appendChild(note);
+    }
+
+    if (cur.refundCount) {
+      const rn = document.createElement("p"); rn.className = "meta"; rn.style.margin = "0";
+      rn.textContent = "Refunds in this period: " + cur.refundCount + " totaling " + money(r2(cur.refundTotal)) + ". Already taken out of revenue and profit.";
+      $("stats").appendChild(rn);
+    }
+    const est = document.createElement("p"); est.className = "meta"; est.style.margin = "0";
+    est.textContent = "Net profit is an estimate: gross profit minus expenses. Monthly expenses are spread evenly over the days of the month.";
+    $("stats").appendChild(est);
+
+    renderChart(periods, cur);
+
+    // Highest and lowest sellers (by units sold). Items with no sales this period count as 0.
+    const rows = Object.values(cur.byItem).map(v => ({ ...v }));
+    const soldKeys = new Set(Object.keys(cur.byItem));
+    for (const it of items) if (!soldKeys.has(it.id)) rows.push({ name: it.name, units: 0, revenue: 0, profit: 0 });
+    rows.sort((a, b) => b.units - a.units || b.revenue - a.revenue);
+    const show = (title, r) => {
+      const row = document.createElement("div"); row.className = "mrow";
+      const left = document.createElement("span"); left.textContent = r.name;
+      const small = document.createElement("small");
+      small.textContent = title + " · " + r.units + " sold";
+      left.appendChild(small);
+      const right = document.createElement("strong"); right.textContent = money(r2(r.revenue));
+      row.append(left, right); $("extremes").appendChild(row);
+    };
+    if (rows.length && rows[0].units > 0) show("Highest sales", rows[0]);
+    if (rows.length > 1) show("Lowest sales", rows[rows.length - 1]);
+
+    // Most and least profitable (gross profit per item, using what each batch really cost)
+    const byProfit = rows.filter(r => r.units > 0).sort((a, b) => b.profit - a.profit);
+    const showProfit = (title, r) => {
+      const row = document.createElement("div"); row.className = "mrow";
+      const left = document.createElement("span"); left.textContent = r.name;
+      const small = document.createElement("small"); small.textContent = title + " · " + r.units + " sold";
+      left.appendChild(small);
+      const right = document.createElement("strong"); right.textContent = money(r2(r.profit));
+      row.append(left, right); $("profitX").appendChild(row);
+    };
+    if (byProfit.length) showProfit("Most profitable", byProfit[0]);
+    if (byProfit.length > 1) showProfit("Least profitable", byProfit[byProfit.length - 1]);
+
+    // Everything that sold in this period
+    const sold = rows.filter(r => r.units > 0);
+    sold.forEach((r, n) => {
+      const row = document.createElement("div"); row.className = "mrow";
+      const left = document.createElement("span"); left.textContent = (n + 1) + ". " + r.name;
+      const small = document.createElement("small");
+      small.textContent = r.units + " sold · profit " + money(r2(r.profit));
+      left.appendChild(small);
+      const right = document.createElement("strong"); right.textContent = money(r2(r.revenue));
+      row.append(left, right); $("itemsSold").appendChild(row);
+    });
+  }
+
+  // Receipt list, newest first
+  const list = $("salesList");
+  list.textContent = "";
+  for (const sale of [...sales].reverse()) {
+    const row = document.createElement("button"); row.className = "srow";
+    const left = document.createElement("span");
+    left.textContent = "#" + String(sale.no).padStart(4, "0");
+    const small = document.createElement("small");
+    small.textContent = new Date(sale.date).toLocaleString() + " · " + (isCashPayment(sale) ? "Cash" : "E-wallet") + (refunds.some(r => r.saleNo === sale.no) ? " · has refunds" : "");
+    left.appendChild(small);
+    const right = document.createElement("strong");
+    right.textContent = money(sale.total);
+    row.append(left, right);
+    row.onclick = () => showReceipt(sale);
+    list.appendChild(row);
+  }
+}
+
+/* ---- Printable price list ---- */
+function renderPrint() {
+  $("printDate").textContent = "Printed " + new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const body = $("printRows");
+  body.textContent = "";
+  [...items].sort((a, b) => a.name.localeCompare(b.name)).forEach((it, n) => {
+    const hasCost = typeof it.cost === "number";
+    const cells = [n + 1, it.name, it.barcode || "—", money(it.price),
+                   hasCost ? money(it.cost) : "—", hasCost ? money(r2(it.price - it.cost)) : "—"];
+    const tr = document.createElement("tr");
+    cells.forEach((c, i) => {
+      const td = document.createElement("td"); td.textContent = c;
+      if (i >= 3) td.className = "r";
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+/* ---- Backup: your data lives only in this browser, so keep a copy somewhere safe ---- */
+function openBackup() {
+  $("backupText").value = JSON.stringify({ version: 1, items, sales, expenses, shifts, cashiers, refunds });
+  $("backupMsg").textContent = "";
+  $("backupDlg").showModal();
+}
+async function copyBackup() {
+  const box = $("backupText");
+  box.select();
+  try {
+    await navigator.clipboard.writeText(box.value);
+    $("backupMsg").textContent = "Copied. Paste it somewhere safe.";
+  } catch (e) {
+    $("backupMsg").textContent = "Couldn't copy automatically. Press and hold the box, then choose Copy.";
+  }
+}
+function restoreBackup() {
+  let data = null;
+  try { data = JSON.parse($("backupText").value); } catch (e) { /* not valid text */ }
+  const ok = data && Array.isArray(data.items) && Array.isArray(data.sales) &&
+    data.items.every(i => i && i.id && typeof i.name === "string" && typeof i.barcode === "string" &&
+                          typeof i.price === "number" && typeof i.stock === "number") &&
+    data.sales.every(x => x && typeof x.no === "number" && typeof x.total === "number" && Array.isArray(x.lines));
+  if (!ok) { $("backupMsg").textContent = "That doesn't look like a backup from this app. Nothing was changed."; return; }
+  askConfirm("Replace all current items and sales with this backup?", "Yes", () => {
+    items = data.items.map(migrateItem); sales = data.sales;
+    expenses = Array.isArray(data.expenses) ? data.expenses : []; saveExpenses();
+    shifts = Array.isArray(data.shifts) ? data.shifts.map(sh => { delete sh.selfie; return sh; }) : []; saveShifts();
+    cashiers = Array.isArray(data.cashiers) ? data.cashiers : cashiers; saveCashiers();
+    refunds = Array.isArray(data.refunds) ? data.refunds : []; saveRefunds();
+    saveItems(); saveSales();
+    cart = [];
+    render(); renderSales(); renderCart();
+    $("backupDlg").close();
+  });
+}
+
+/* ---- Live camera at checkout: keeps scanning and adds each item to the cart ---- */
+let liveStream = null, liveTimer = null, liveBusy = false, lastCode = "", lastSeen = 0;
+
+async function startLive() {
+  $("liveMsg").textContent = "";
+  if (!("BarcodeDetector" in window)) {
+    $("liveMsg").textContent = "This browser can't scan barcodes live. Use the Scan button or type the barcode.";
+    return;
+  }
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  } catch (e) {
+    $("liveMsg").textContent = "Couldn't open the camera. Allow camera access for this page. (It stays blocked inside the preview frame and works when the page is opened on its own web address.)";
+    return;
+  }
+  const v = $("liveVideo");
+  v.srcObject = liveStream;
+  await v.play();
+  $("camPanel").classList.add("on");
+  $("camBtn").textContent = "Stop camera";
+  const detector = new BarcodeDetector();
+  liveTimer = setInterval(async () => {
+    if (liveBusy) return;                 // don't start a new check while the last one is running
+    liveBusy = true;
+    try {
+      const found = await detector.detect(v);
+      if (found.length) onLiveCode(found[0].rawValue);
+    } catch (e) { /* skip this frame */ }
+    liveBusy = false;
+  }, 250);
+}
+
+function stopLive() {
+  clearInterval(liveTimer); liveTimer = null;
+  if (liveStream) liveStream.getTracks().forEach(t => t.stop());
+  liveStream = null;
+  $("liveVideo").srcObject = null;
+  $("camPanel").classList.remove("on");
+  $("camBtn").textContent = "Start camera";
+}
+
+// Called every time the camera sees a barcode. If the same barcode just stays in view,
+// we add it only once. Take it out of view and show it again to add another.
+function onLiveCode(code) {
+  const now = Date.now();
+  const stillInView = code === lastCode && now - lastSeen < 1200;
+  lastCode = code; lastSeen = now;
+  if (stillInView) return;
+  const item = items.find(i => i.barcode && i.barcode === code);
+  if (!item) { $("liveMsg").textContent = "Barcode " + code + " isn't in your items."; return; }
+  if (addItem(item)) {
+    showMsg("");
+    $("liveMsg").textContent = "Added: " + item.name;
+    if (navigator.vibrate) navigator.vibrate(60);
+  }
+}
+
+function showTab(name) {
+  // Not logged in? Only the home screen. Cashiers may only open Checkout and Drawer.
+  if (name !== "home") {
+    if (!session) name = "home";
+    else if (!isOwner() && name !== "checkout" && name !== "drawer" && !(name === "refunds" && canRefund())) name = "checkout";
+    if (session) applyRole();     // permissions can change while someone is logged in
+  }
+  $("homeView").hidden = name !== "home";
+  $("topbar").hidden = name === "home";
+  closeMenu();
+  const titles = { dashboard: "Home", alerts: "Stock alerts", items: "Items", checkout: "Checkout", refunds: "Refunds", sales: "Sales",
+                   expenses: "Expenses", staff: "Staff", drawer: "Cash drawer", print: "Price list" };
+  $("pageTitle").textContent = titles[name] || "";
+  $("dashboardView").hidden = name !== "dashboard";
+  $("tabHome").classList.toggle("on", name === "dashboard" || name === "alerts");
+  if (name === "dashboard") renderDashboard();
+  $("alertsView").hidden = name !== "alerts";
+  if (name === "alerts") renderAlerts();
+  $("staffView").hidden = name !== "staff";
+  $("tabStaff").classList.toggle("on", name === "staff");
+  if (name === "staff") renderStaff();
+  $("refundsView").hidden = name !== "refunds";
+  $("tabRefunds").classList.toggle("on", name === "refunds");
+  if (name === "refunds") { refundSale = null; renderRefunds(); }
+  $("itemsView").hidden = name !== "items";
+  $("checkoutView").hidden = name !== "checkout";
+  $("tabItems").classList.toggle("on", name === "items");
+  $("tabCheckout").classList.toggle("on", name === "checkout");
+  $("salesView").hidden = name !== "sales";
+  $("tabSales").classList.toggle("on", name === "sales");
+  if (name === "sales") renderSales();
+  $("drawerView").hidden = name !== "drawer";
+  $("tabDrawer").classList.toggle("on", name === "drawer");
+  if (name === "drawer") renderDrawer();
+  $("expensesView").hidden = name !== "expenses";
+  $("tabExpenses").classList.toggle("on", name === "expenses");
+  if (name === "expenses") renderExpenses();
+  $("printView").hidden = name !== "print";
+  if (name === "print") renderPrint();
+  if (name !== "checkout") stopLive();
+  if (name === "checkout") {
+    renderCart();
+    // keep the box ready for a USB/Bluetooth scanner, but don't pop up a phone keyboard
+    if (matchMedia("(pointer: fine)").matches) $("scanInput").focus();
+  }
+}
+
+/* =====================================================
+   6. WIRING BUTTONS TO FUNCTIONS
+   ===================================================== */
+$("addBtn").onclick = () => openForm(null);
+$("saveBtn").onclick = submitForm;
+$("cancelBtn").onclick = () => $("formDlg").close();
+$("scanBtn").onclick = () => startScan(code => { $("fBarcode").value = code; onBarcodeChange(); });
+$("fBarcode").addEventListener("input", onBarcodeChange);
+$("fName").addEventListener("input", onNameInput);
+$("fPrice").addEventListener("input", updateProfitLine);
+$("fCost").addEventListener("input", updateProfitLine);
+$("addDateBtn").onclick = () => { batchRows.push({ date: "", qty: "", cost: "" }); renderBatchInputs(); };
+$("modeDay").onclick = () => { salesMode = "day"; salesPeriod = null; renderSales(); };
+$("modeWeek").onclick = () => { salesMode = "week"; salesPeriod = null; renderSales(); };
+$("tabExpenses").onclick = () => showTab("expenses");
+$("addExpenseBtn").onclick = addExpense;
+$("tabDrawer").onclick = () => showTab("drawer");
+$("payoutBtn").onclick = addPayout;
+$("closeShiftBtn").onclick = closeShift;
+$("modeMonth").onclick = () => { salesMode = "month"; salesPeriod = null; renderSales(); };
+$("periodSel").onchange = () => { salesPeriod = $("periodSel").value; renderSales(); };
+$("printBtn").onclick = () => showTab("print");
+$("printBack").onclick = () => showTab("items");
+$("printNow").onclick = () => { try { window.print(); } catch (e) { /* blocked in the preview */ } };
+$("received").addEventListener("input", updateChange);
+$("scanCancel").onclick = stopScan;
+$("photoBtn").onclick = () => $("photoInput").click();
+$("photoInput").onchange = (e) => readPhoto(e.target.files[0]);
+$("scanDlg").addEventListener("close", stopScan);
+$("search").addEventListener("input", render);
+
+$("finishBtn").onclick = finishSale;
+$("rcptDone").onclick = () => $("receiptDlg").close();
+$("tabSales").onclick = () => showTab("sales");
+$("backupBtn").onclick = openBackup;
+$("copyBtn").onclick = copyBackup;
+$("restoreBtn").onclick = restoreBackup;
+$("backupClose").onclick = () => $("backupDlg").close();
+$("tabItems").onclick = () => showTab("items");
+$("tabCheckout").onclick = () => showTab("checkout");
+$("scanInput").addEventListener("keydown", e => { if (e.key === "Enter") addToCart($("scanInput").value); });
+$("camBtn").onclick = () => (liveStream ? stopLive() : startLive());
+$("cartScanBtn").onclick = () => { stopLive(); startScan(addToCart); };
+$("clearBtn").onclick = () => {
+  if (cart.length) askConfirm("Remove everything from the cart?", "Yes", () => { cart = []; renderCart(); });
+};
+
+$("hOwner").onclick = () => { if (auth) { setOwnerMode("pin"); showPanel("hOwnerLogin"); } else showPanel("hSetup"); };
+$("hCashier").onclick = () => { $("hCashierPin").value = ""; showPanel("hCashierLogin"); refreshCashierPanel(); };
+document.querySelectorAll(".back").forEach(b => { b.onclick = () => showHome(); });
+$("suBtn").onclick = doSetup;
+$("olBtn").onclick = doOwnerLogin;
+$("olInput").addEventListener("keydown", e => { if (e.key === "Enter") doOwnerLogin(); });
+$("olSwitch").onclick = () => setOwnerMode(ownerMode === "pin" ? "password" : "pin");
+$("olForgot").onclick = () => { $("olForgotText").hidden = !$("olForgotText").hidden; };
+$("hCashierSel").onchange = refreshCashierPanel;
+$("hStartShift").onclick = doStartShift;
+$("hResumeBtn").onclick = resumeShift;
+$("logoutBtn").onclick = () => logout();
+$("tabStaff").onclick = () => showTab("staff");
+$("menuBtn").onclick = () => ($("sideMenu").classList.contains("open") ? closeMenu() : openMenu());
+$("menuBackdrop").onclick = closeMenu;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+$("homeBtn").onclick = goHome;
+$("tabHome").onclick = goHome;
+$("dashDay").onclick = () => { dashMode = "day"; renderDashboard(); };
+$("dashWeek").onclick = () => { dashMode = "week"; renderDashboard(); };
+$("dashMonth").onclick = () => { dashMode = "month"; renderDashboard(); };
+$("dashReport").onclick = () => { salesMode = dashMode; salesPeriod = null; showTab("sales"); };
+$("dashLow").onclick = () => { alertMode = "low"; showTab("alerts"); };
+$("dashExpiry").onclick = () => { alertMode = "expiry"; showTab("alerts"); };
+$("alertBack").onclick = goHome;
+$("tabRefunds").onclick = () => showTab("refunds");
+$("startOwnerShiftBtn").onclick = startOwnerShift;
+$("payCash").onclick = () => setPayMethod("cash");
+$("payEw").onclick = () => setPayMethod("ewallet");
+$("rfSearch").addEventListener("input", renderRefunds);
+$("rfBack").onclick = () => { refundSale = null; renderRefunds(); };
+$("rfProcess").onclick = processRefund;
+$("addCashierBtn").onclick = addCashier;
+$("changePinBtn").onclick = () => changeSecret("pin");
+$("changePassBtn").onclick = () => changeSecret("pass");
+
+render();   // draw the list when the page opens
+/* ---- Home: sales summary, chart, and things that need attention ---- */
+let dashMode = "month";     // "day", "week" or "month"
+let alertMode = "low";      // "low" or "expiry"
+const EXPIRY_DAYS = 30;     // stock expiring within this many days counts as "expiring soon"
+
+const lowStockItems = () => items.filter(i => i.stock <= LOW_STOCK).sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
+function expiringBatches() {
+  const out = [];
+  for (const it of items) for (const b of (it.batches || [])) {
+    if (b.qty > 0) { const days = daysUntil(b.date); if (days <= EXPIRY_DAYS) out.push({ it, b, days }); }
+  }
+  return out.sort((x, y) => x.days - y.days);
+}
+
+function renderDashboard() {
+  const now = new Date();
+  $("dashDate").textContent = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  for (const [id, m] of [["dashDay", "day"], ["dashWeek", "week"], ["dashMonth", "month"]]) $(id).className = dashMode === m ? "primary" : "";
+
+  const periods = buildPeriods(dashMode);
+  const p = periodOf(now, dashMode);
+  let cur = periods.find(x => x.key === p.key);
+  if (!cur) {                                          // nothing sold yet in this period
+    const exp = expenseInRange(p.start, p.end);
+    cur = { ...p, revenue: 0, cogs: 0, profit: 0, count: 0, units: 0, expenses: exp, net: -exp, noCost: false, refundTotal: 0, refundCount: 0, byItem: {} };
+    periods.push(cur);
+  }
+  $("dashPeriod").textContent = ({ day: "Today", week: "This week", month: "This month" })[dashMode] + " · " + cur.label;
+
+  const box = $("dashStats");
+  box.textContent = "";
+  const grid = document.createElement("div"); grid.className = "stats";
+  for (const [label, value] of [["Revenue", money(r2(cur.revenue))], ["Cost of goods sold", money(r2(cur.cogs))],
+                                ["Gross profit", money(r2(cur.profit))], ["Expenses", money(r2(cur.expenses))],
+                                ["Estimated net profit", money(r2(cur.net))], [cur.count + (cur.count === 1 ? " sale" : " sales"), cur.units + " items sold"]]) {
+    const cell = makeStat(label, value);
+    if (label === "Estimated net profit" && cur.net < 0) cell.querySelector("strong").className = "low";
+    grid.appendChild(cell);
+  }
+  box.appendChild(grid);
+  if (cur.refundCount) {
+    const rn = document.createElement("p"); rn.className = "meta"; rn.style.margin = "0";
+    rn.textContent = "Includes " + cur.refundCount + " refund" + (cur.refundCount === 1 ? "" : "s") + " totaling " + money(r2(cur.refundTotal)) + ".";
+    box.appendChild(rn);
+  }
+  renderChart(periods, cur, "dashChart", "dashChartTitle", dashMode);
+
+  const low = lowStockItems().length;
+  $("dashLow").textContent = low ? "⚠ " + low + (low === 1 ? " product is" : " products are") + " low on stock" : "✓ No products are low on stock";
+  $("dashLow").className = "wide" + (low ? " danger" : "");
+  const soon = new Set(expiringBatches().map(x => x.it.id)).size;
+  $("dashExpiry").textContent = soon ? "⚠ " + soon + (soon === 1 ? " product has" : " products have") + " expired or expire within " + EXPIRY_DAYS + " days" : "✓ Nothing is expiring in the next " + EXPIRY_DAYS + " days";
+  $("dashExpiry").className = "wide" + (soon ? " danger" : "");
+}
+
+function alertCard(it, status, detail) {
+  const card = document.createElement("div"); card.className = "item";
+  const top = document.createElement("div"); top.className = "item-top";
+  const name = document.createElement("span"); name.className = "name"; name.textContent = it.name;
+  const st = document.createElement("span"); st.className = "low"; st.textContent = status;
+  top.append(name, st);
+  const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = detail;
+  const actions = document.createElement("div"); actions.className = "actions";
+  actions.appendChild(button("Edit item", () => openForm(it.id)));
+  card.append(top, meta, actions);
+  return card;
+}
+
+function renderAlerts() {
+  const list = $("alertList");
+  list.textContent = "";
+  const empty = (t) => { const e = document.createElement("p"); e.className = "empty"; e.textContent = t; list.appendChild(e); };
+  if (alertMode === "low") {
+    $("alertTitle").textContent = "Low on stock";
+    $("alertSub").textContent = "Products with " + LOW_STOCK + " or fewer left. Tap Edit item to restock.";
+    const low = lowStockItems();
+    if (!low.length) empty("Nothing is low on stock.");
+    for (const it of low) list.appendChild(alertCard(it, it.stock === 0 ? "Out of stock" : it.stock + " left", "Selling price " + money(it.price) + (typeof it.cost === "number" ? " · supplier price " + money(it.cost) : "")));
+  } else {
+    $("alertTitle").textContent = "Expiring soon";
+    $("alertSub").textContent = "Stock that has expired or expires within " + EXPIRY_DAYS + " days, soonest first.";
+    const soon = expiringBatches();
+    if (!soon.length) empty("Nothing is expiring soon.");
+    for (const { it, b, days } of soon) {
+      list.appendChild(alertCard(it, days < 0 ? "Expired " + (-days) + "d ago" : days === 0 ? "Expires today" : days + " days left",
+                                 niceDate(b.date) + " · ×" + b.qty + " in stock"));
+    }
+  }
+}
+
+/* ---- Side menu ---- */
+function openMenu() { $("sideMenu").classList.add("open"); $("menuBackdrop").hidden = false; $("menuBtn").setAttribute("aria-expanded", "true"); }
+function closeMenu() { $("sideMenu").classList.remove("open"); $("menuBackdrop").hidden = true; $("menuBtn").setAttribute("aria-expanded", "false"); }
+const goHome = () => showTab(isOwner() ? "dashboard" : "checkout");
+
+/* ---- Offline and install support ---- */
+const APP_VERSION = "3";     // change this number when you upload a new copy, so you can tell which one is running
+$("verHome").textContent = $("verMenu").textContent = "Version " + APP_VERSION;
+
+// Until server sync exists, everything is saved on this device only, and the badge says so.
+const netText = () => (navigator.onLine ? "● Online" : "● Offline") + " · saved on this device only";
+function updateNetStatus() {
+  for (const id of ["netHome", "netTop"]) {
+    $(id).textContent = netText();
+    $(id).classList.toggle("off", !navigator.onLine);
+  }
+}
+function updateNetDot() { $("netDot").className = "net" + (navigator.onLine ? "" : " off"); $("netDot").title = netText(); }
+window.addEventListener("online", updateNetDot);
+window.addEventListener("offline", updateNetDot);
+updateNetDot();
+window.addEventListener("online", updateNetStatus);
+window.addEventListener("offline", updateNetStatus);
+updateNetStatus();
+
+// "Install app" button (Chrome offers this when the page is hosted and installable)
+let deferredInstall = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; $("installBtn").hidden = false; });
+window.addEventListener("appinstalled", () => { $("installBtn").hidden = true; });
+$("installBtn").onclick = () => { if (!deferredInstall) return; deferredInstall.prompt(); deferredInstall = null; $("installBtn").hidden = true; };
+
+// The service worker keeps a copy of the app on the device so it opens with no internet
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* not available here (for example inside a preview frame) */ });
+}
+// Ask the browser not to clear this app's saved data when the phone is low on space
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* not supported */ }
+
+ensureDailyPins();
+saveShifts();   // also clears any old selfies from storage
+showHome(); // everyone starts at the home screen
+</script>
+</body>
+</html>
