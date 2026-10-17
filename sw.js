@@ -1,6 +1,6 @@
 // Keeps a copy of the app on the device so it opens with no internet.
 // Change VERSION whenever you upload a new index.html, so old copies are replaced.
-const VERSION = "pos-v4";
+const VERSION = "pos-v6";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
