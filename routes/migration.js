@@ -14,13 +14,13 @@ module.exports = function migrationRouter(db, requireOwner) {
       const migrate = db.transaction(() => {
         const cashier = db.prepare("INSERT INTO cashiers (id,name,pin_hash,active,created_at) VALUES (?,?,NULL,1,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name");
         for (const c of data.cashiers) if (c && c.id && typeof c.name === "string" && c.name.trim()) cashier.run(String(c.id), c.name.trim(), now);
-        const product = db.prepare(`INSERT INTO products (id,barcode,name,price,cost,stock,batches_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)
-          ON CONFLICT(id) DO UPDATE SET barcode=excluded.barcode,name=excluded.name,price=excluded.price,cost=excluded.cost,stock=excluded.stock,batches_json=excluded.batches_json,updated_at=excluded.updated_at`);
+        const product = db.prepare(`INSERT INTO products (id,barcode,name,price,cost,stock,batches_json,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET barcode=excluded.barcode,name=excluded.name,price=excluded.price,cost=excluded.cost,stock=excluded.stock,batches_json=excluded.batches_json,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`);
         for (const p of data.items) {
           if (!p || !p.id || typeof p.name !== "string" || !p.name.trim()) continue;
           if (p.price != null && (typeof p.price !== "number" || !Number.isFinite(p.price) || p.price < 0)) throw new Error("Product has invalid price");
           if (p.stock != null && (typeof p.stock !== "number" || !Number.isFinite(p.stock) || p.stock < 0)) throw new Error("Product has invalid stock");
-          product.run(String(p.id), str(p.barcode), p.name.trim(), money(p.price), typeof p.cost === "number" ? money(p.cost) : null, Number.isFinite(p.stock) ? Math.floor(p.stock) : 0, JSON.stringify(Array.isArray(p.batches) ? p.batches : []), now, now);
+          product.run(String(p.id), str(p.barcode), p.name.trim(), money(p.price), typeof p.cost === "number" ? money(p.cost) : null, Number.isFinite(p.stock) ? Math.floor(p.stock) : 0, JSON.stringify(Array.isArray(p.batches) ? p.batches : []), JSON.stringify(p), now, now);
         }
         const expense = db.prepare(`INSERT INTO expenses (id,date,amount,description,spread,created_at) VALUES (?,?,?,?,?,?)
           ON CONFLICT(id) DO UPDATE SET date=excluded.date,amount=excluded.amount,description=excluded.description,spread=excluded.spread`);
