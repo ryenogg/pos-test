@@ -3,7 +3,7 @@ module.exports = function productsRouter(db, requireOwner) {
   const router = express.Router();
   const isMoney = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100000000;
   const isStock = (v) => Number.isSafeInteger(v) && v >= 0 && v <= 1000000000;
-  router.get("/", (_req, res) => {
+  router.get("/", requireOwner, (_req, res) => {
     try {
       const rows = db.prepare("SELECT id, barcode, name, price, cost, stock, batches_json, metadata_json, created_at, updated_at FROM products ORDER BY name COLLATE NOCASE").all();
       res.json({ ok: true, products: rows.map((r) => ({ ...(JSON.parse(r.metadata_json || "{}")), id: r.id, barcode: r.barcode, name: r.name, price: r.price / 100, cost: r.cost == null ? null : r.cost / 100, stock: r.stock, batches: JSON.parse(r.batches_json || "[]"), created_at: r.created_at, updated_at: r.updated_at })) });
