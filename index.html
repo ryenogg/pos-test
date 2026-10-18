@@ -809,7 +809,7 @@ async function syncProductsAfterLogin() {
   alert("Product sync finished.\nAdded from server to this device: " + added.length +
     "\nUploaded local-only products: " + uploaded +
     "\nServer deletes completed: " + deleted +
-    "\nSame-ID products kept local without overwriting server: " + sameId +
+    "\nSame-ID products kept local without overwriting server: " + shared +
     (failed.length ? "\n\nSome items need attention:\n" + failed.slice(0, 8).join("\n") : "") +
     (failed.length > 8 ? "\n…and " + (failed.length - 8) + " more." : ""));
 }
