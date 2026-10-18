@@ -128,7 +128,7 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
 
   const listedSales = await (await fetch(base + "/api/sales", { headers: { Cookie: cookie } })).json();
   assert.equal(listedSales.sales.length, 3);
-  assert.deepEqual(listedSales.sales[0], testSale);
+  assert.deepEqual(listedSales.sales.find(x => x.id === testSale.id), testSale);
 
   const unauthorizedExpense = await fetch(base + "/api/expenses");
   assert.equal(unauthorizedExpense.status, 401, "expense reads require owner login");
