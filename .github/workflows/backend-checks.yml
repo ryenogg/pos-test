@@ -31,7 +31,7 @@ jobs:
           import re
           from pathlib import Path
           html = Path("index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.S | re.I)
+          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S | re.I)
           if not scripts:
               raise SystemExit("No inline script blocks found")
           Path("/tmp/shop-pos-inline.js").write_text("\\n".join(scripts), encoding="utf-8")
