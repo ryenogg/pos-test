@@ -24,6 +24,7 @@ jobs:
           node --check routes/auth.js
           node --check routes/products.js
           node --check routes/expenses.js
+          node --check routes/sales.js
           node --check routes/migration.js
           node --check test/smoke.test.js
       - name: Check inline frontend JavaScript syntax
