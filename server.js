@@ -5,6 +5,7 @@ const path = require("node:path");
 const productsRouter = require("./routes/products");
 const migrationRouter = require("./routes/migration");
 const authRouter = require("./routes/auth");
+const expensesRouter = require("./routes/expenses");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -83,6 +84,8 @@ function ensureColumn(table, column, definition) {
     db.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`);
   }
 }
+ensureColumn("expenses", "metadata_json", "TEXT NOT NULL DEFAULT '{}'");
+ensureColumn("expenses", "deleted_at", "TEXT");
 ensureColumn("products", "price", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("products", "batches_json", "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn("products", "updated_at", "TEXT NOT NULL DEFAULT ''");
@@ -95,6 +98,7 @@ app.use(express.json({ limit: "10mb", strict: true }));
 const auth = authRouter(db);
 app.use("/api/auth", auth);
 app.use("/api/products", productsRouter(db, auth.requireOwner));
+app.use("/api/expenses", expensesRouter(db, auth.requireOwner));
 app.use("/api/migrate", migrationRouter(db, auth.requireOwner));
 
 // Serve only the known frontend files. Do not expose server.js, routes, data,
