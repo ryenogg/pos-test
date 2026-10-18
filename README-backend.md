@@ -16,7 +16,7 @@ Open http://localhost:3000. The database is created at `data/shop-pos.db` by def
 ## API endpoints
 - `GET /api/health` — process health check
 - `GET /api/status` — database tables
-- `GET /api/products` — list products
+- `GET /api/products` — list products (owner login required)
 - `POST /api/products` — create/update a product (owner login required)
 - `DELETE /api/products/:id` — delete a product (owner login required)
 - `/api/auth/*` — owner setup/login/session endpoints
