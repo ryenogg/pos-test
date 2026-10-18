@@ -1926,12 +1926,20 @@ function logout(msg) {
 // ----- owner: first-time setup and login -----
 async function doSetup() {
   const pw = $("suPw").value, pin = $("suPin").value, err = (t) => { $("suErr").textContent = t; };
-  if (await checkBackendAuth()) {
-    err("Online owner setup must be completed on the server computer first. Ask the person managing the server to follow README-backend.md, then return here and log in with the owner password.");
-    return;
-  }
   if (pw.length < 8) return err("The password needs at least 8 characters.");
   if (pw !== $("suPw2").value) return err("The two passwords don't match.");
+  if (await checkBackendAuth()) {
+    try {
+      const r = await fetch("/api/auth/setup", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return err(d.error || "Online owner setup failed. Make sure you are on the server computer.");
+      backendOwnerConfigured = true;
+      for (const id of ["suPw", "suPw2", "suPin", "suPin2"]) $(id).value = "";
+      err(""); setOwnerMode("password"); $("olSwitch").hidden = true; $("olForgot").hidden = true;
+      showPanel("hOwnerLogin"); $("olMsg").textContent = "Owner account created. Log in with the password you just set.";
+    } catch (_) { err("Could not reach the server. Try again on the server computer."); }
+    return;
+  }
   if (!/^\d{4,6}$/.test(pin)) return err("The PIN must be 4 to 6 digits.");
   if (pin !== $("suPin2").value) return err("The two PINs don't match.");
   try { auth = { pw: await hashSecret(pw), pin: await hashSecret(pin) }; }
