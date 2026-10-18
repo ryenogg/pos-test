@@ -87,4 +87,25 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
   assert.equal(removed.status, 200, "authenticated product delete should work");
   const after = await (await fetch(base + "/api/products", { headers: { Cookie: cookie } })).json();
   assert.equal(after.products.length, 0);
+
+  const unauthorizedExpense = await fetch(base + "/api/expenses");
+  assert.equal(unauthorizedExpense.status, 401, "expense reads require owner login");
+  const testExpense = { id: "expense-test-1", date: "2026-10-18", amount: 18.75, category: "Supplies", note: "Test only", spread: "once" };
+  const expenseHeaders = { "Content-Type": "application/json", Cookie: cookie };
+  const saveExpense = () => fetch(base + "/api/expenses", { method: "POST", headers: expenseHeaders, body: JSON.stringify(testExpense) });
+  assert.equal((await saveExpense()).status, 201, "first expense save should create");
+  const retryExpense = await saveExpense();
+  assert.equal(retryExpense.status, 200, "retrying the same expense should not duplicate");
+  assert.equal((await retryExpense.json()).alreadyExists, true);
+  const changedExpense = await fetch(base + "/api/expenses", { method: "POST", headers: expenseHeaders, body: JSON.stringify({ ...testExpense, amount: 19 }) });
+  assert.equal(changedExpense.status, 409, "conflicting expense ID should not overwrite");
+  const listExpenses = await (await fetch(base + "/api/expenses", { headers: { Cookie: cookie } })).json();
+  assert.equal(listExpenses.expenses.length, 1);
+  assert.equal(listExpenses.expenses[0].amount, 18.75);
+  assert.equal(listExpenses.expenses[0].category, "Supplies");
+  const deleteExpense = await fetch(base + "/api/expenses/expense-test-1", { method: "DELETE", headers: { Cookie: cookie } });
+  assert.equal(deleteExpense.status, 200);
+  const afterDelete = await (await fetch(base + "/api/expenses", { headers: { Cookie: cookie } })).json();
+  assert.ok(afterDelete.expenses[0].deletedAt, "deleted expense should have tombstone");
+  assert.equal((await saveExpense()).status, 409, "deleted expense must not be resurrected");
 });
