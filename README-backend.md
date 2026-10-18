@@ -27,5 +27,6 @@ Prices and money values are stored as integer cents in SQLite. `data/` and SQLit
 ## Important before deployment
 - The owner setup endpoint is limited to localhost. Create the owner account on the server computer.
 - Use HTTPS and review proxy settings before exposing the service publicly.
-- The current frontend has not yet been wired to the owner login flow. As a result, product writes from the frontend will receive HTTP 401 until that integration is completed. **Do not merge/deploy this backend as a production replacement yet.**
-- The frontend still uses localStorage for some records. Verify API wiring and perform a backup before any migration. Do not clear browser storage to troubleshoot sync.
+- The frontend owner screen now detects this backend and uses the server-side password login. Initial owner setup is permitted only when opening the app on the server computer (for example, `http://localhost:3000`); attempts from another device are rejected by the server.
+- Product create/edit/delete and the rest of the POS records are **not yet synced to the backend**. Product changes still save in this browser's localStorage, so do not assume the SQLite database is the live source of truth.
+- This is an integration step, not a production-ready release. Test with a disposable database and a separate browser profile first. Back up the existing POS before migration. Never clear browser storage to troubleshoot sync.
