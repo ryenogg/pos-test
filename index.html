@@ -3284,7 +3284,7 @@ function closeMenu() { $("sideMenu").classList.remove("open"); $("menuBackdrop")
 function goHome() { showTab(isOwner() ? "dashboard" : "checkout"); }
 
 /* ---- Offline and install support ---- */
-const APP_VERSION = "6";     // change this number when you upload a new copy, so you can tell which one is running
+const APP_VERSION = "7";     // change this number when you upload a new copy, so you can tell which one is running
 $("verHome").textContent = $("verMenu").textContent = "Version " + APP_VERSION;
 
 // Until server sync exists, everything is saved on this device only, and the badge says so.
