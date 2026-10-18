@@ -88,6 +88,28 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
   const after = await (await fetch(base + "/api/products", { headers: { Cookie: cookie } })).json();
   assert.equal(after.products.length, 0);
 
+
+  const saleHeaders = { "Content-Type": "application/json", Cookie: cookie };
+  assert.equal((await fetch(base + "/api/sales")).status, 401, "sales reads require owner login");
+  const testSale = {
+    id: "test-sale-unique-1", no: 1, date: "2026-10-18T10:00:00.000Z",
+    total: 25, received: 30, change: 5, method: "cash",
+    lines: [{ id: "test-product", name: "Test Product", barcode: "TEST-001", price: 25, cost: 10, qty: 1 }]
+  };
+  const saveSale = (payload) => fetch(base + "/api/sales", {
+    method: "POST", headers: saleHeaders, body: JSON.stringify(payload)
+  });
+  assert.equal((await saveSale(testSale)).status, 201, "new sale should save");
+  const retriedSale = await saveSale(testSale);
+  assert.equal(retriedSale.status, 200, "same sale should be idempotent");
+  assert.equal((await retriedSale.json()).alreadyExists, true);
+  assert.equal((await saveSale({ ...testSale, total: 26 })).status, 409, "same ID with changed amount must conflict");
+  assert.equal((await saveSale({ ...testSale, id: "different-sale" })).status, 409, "same receipt with different ID must conflict");
+  assert.equal((await saveSale({ ...testSale, id: "bad-sale", no: 2, lines: [] })).status, 400, "empty sales should be rejected");
+  const listedSales = await (await fetch(base + "/api/sales", { headers: { Cookie: cookie } })).json();
+  assert.equal(listedSales.sales.length, 1);
+  assert.deepEqual(listedSales.sales[0], testSale);
+
   const unauthorizedExpense = await fetch(base + "/api/expenses");
   assert.equal(unauthorizedExpense.status, 401, "expense reads require owner login");
   const testExpense = { id: "expense-test-1", date: "2026-10-18", amount: 18.75, category: "Supplies", note: "Test only", spread: "once" };
