@@ -2067,6 +2067,7 @@ async function doOwnerLogin() {
       if (!r.ok) return msg(d.error || "Owner login failed.");
       session = { role: "owner", online: true };
       msg(""); loadCart(); applyRole(); showTab("dashboard");
+      void syncProductsAfterLogin();
     } catch (_) { msg("Could not reach the server. Check your connection and try again."); }
     return;
   }
@@ -3378,7 +3379,7 @@ function closeMenu() { $("sideMenu").classList.remove("open"); $("menuBackdrop")
 function goHome() { showTab(isOwner() ? "dashboard" : "checkout"); }
 
 /* ---- Offline and install support ---- */
-const APP_VERSION = "7";     // change this number when you upload a new copy, so you can tell which one is running
+const APP_VERSION = "8";     // change this number when you upload a new copy, so you can tell which one is running
 $("verHome").textContent = $("verMenu").textContent = "Version " + APP_VERSION;
 
 // Until server sync exists, everything is saved on this device only, and the badge says so.
