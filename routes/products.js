@@ -20,9 +20,9 @@ module.exports = function productsRouter(db, requireOwner) {
     }
     const now = new Date().toISOString();
     try {
-      db.prepare(`INSERT INTO products (id, barcode, name, price, cost, stock, batches_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET barcode=excluded.barcode, name=excluded.name, price=excluded.price, cost=excluded.cost, stock=excluded.stock, batches_json=excluded.batches_json, updated_at=excluded.updated_at`)
+      db.prepare(`INSERT INTO products (id, barcode, name, price, cost, stock, batches_json, metadata_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET barcode=excluded.barcode, name=excluded.name, price=excluded.price, cost=excluded.cost, stock=excluded.stock, batches_json=excluded.batches_json, metadata_json=excluded.metadata_json, updated_at=excluded.updated_at`)
         .run(p.id.trim(), p.barcode?.trim() || null, name, Math.round(p.price * 100), p.cost == null || p.cost === "" ? null : Math.round(p.cost * 100), p.stock ?? 0, JSON.stringify(p.batches || []), JSON.stringify(p.metadata || {}), now, now);
       res.json({ ok: true, id: p.id.trim() });
     } catch (e) {
