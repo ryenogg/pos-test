@@ -771,11 +771,12 @@ async function syncProductsAfterLogin() {
   try { remote = (await serverApi("/api/products")).products || []; }
   catch (e) { alert("Logged in, but couldn't load server products. Your local products were not changed. " + e.message); return; }
   const localById = new Map(items.map(it => [String(it.id), it]));
+  const pendingDeletes = pendingProductDeletes();
+  const pendingDeleteSet = new Set(pendingDeletes.map(String));
   const remoteById = new Map(remote.map(it => [String(it.id), it]));
   const localOnly = items.filter(it => !remoteById.has(String(it.id)));
-  const remoteOnly = remote.filter(it => !localById.has(String(it.id)));
+  const remoteOnly = remote.filter(it => !localById.has(String(it.id)) && !pendingDeleteSet.has(String(it.id)));
   const shared = items.length - localOnly.length;
-  const pendingDeletes = pendingProductDeletes();
   const summary = "Product sync will safely merge the two lists.\n\n" +
     "Products on this device: " + localCount + "\nProducts on server: " + remote.length +
     "\nNew server products to add here: " + remoteOnly.length +
@@ -1383,6 +1384,9 @@ function submitForm() {
   if (old) Object.assign(old, fields);
   else items.push({ id: uid(), createdAt: Date.now(), ...fields });
   saveItems();
+  const savedItem = items.find(i => i.id === (old ? old.id : fields.id));
+  const syncItem = old || items[items.length - 1];
+  if (syncItem) void syncSavedProductToServer(syncItem);
   $("formDlg").close();
   render();
   if (!$("alertsView").hidden) renderAlerts();
@@ -1392,9 +1396,23 @@ function fail(msg) { $("formError").textContent = msg; try { $("formError").scro
 function deleteItem(id) {
   const it = items.find(i => i.id === id);
   askConfirm("Delete “" + it.name + "”? This cannot be undone.", "Delete", () => {
-    items = items.filter(i => i.id !== id);
-    saveItems();
-    render();
+    const queued = pendingProductDeletes();
+    if (session && session.online) {
+      void (async () => {
+        try {
+          await serverApi("/api/products/" + encodeURIComponent(id), { method: "DELETE" });
+          savePendingProductDeletes(queued.filter(x => String(x) !== String(id)));
+        } catch (_) {
+          savePendingProductDeletes([...queued, id]);
+        }
+        items = items.filter(i => i.id !== id);
+        saveItems(); render();
+      })();
+    } else {
+      savePendingProductDeletes([...queued, id]);
+      items = items.filter(i => i.id !== id);
+      saveItems(); render();
+    }
   });
 }
 
