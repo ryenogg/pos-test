@@ -419,6 +419,8 @@
   <h2 class="sec">Products sold in this period</h2>
   <div id="itemsSold"></div>
   <h2 class="sec">Receipts (tap one to open it)</h2>
+  <button id="salesUploadServer" type="button" onclick="uploadLocalSalesToServer()">Upload local sales to test server (owner only)</button>
+  <p id="salesSyncStatus" class="meta" aria-live="polite">Manual upload only. Sales remain in this browser.</p>
   <div id="salesList"></div>
   <button id="backupBtn" type="button" class="wide" style="margin-top:16px">Backup and restore</button>
 </main>
@@ -1730,6 +1732,52 @@ function loadSales() {
 function saveSales() {
   try { localStorage.setItem(SALES_KEY, JSON.stringify(sales)); return true; }
   catch (e) { return false; }
+}
+
+
+/* Explicit one-way test upload. Legacy sales have no IDs, so assign and persist
+   stable IDs before sending; never rewrite receipt numbers or local sale values. */
+async function uploadLocalSalesToServer() {
+  const status = $("salesSyncStatus");
+  if (!isOwner() || !session.online) {
+    status.textContent = "Sign in with the server owner account to upload sales.";
+    return;
+  }
+  if (!sales.length) { status.textContent = "There are no local sales to upload."; return; }
+  if (!confirm("Upload " + sales.length + " sales from this browser to the TEST server?\\n\\n" +
+    "This is a one-way experimental upload. Local sales will not be replaced. " +
+    "Receipt number collisions will be reported, not resolved. Do not use real shop data.")) return;
+  const button = $("salesUploadServer");
+  button.disabled = true;
+  let uploaded = 0, already = 0;
+  const errors = [];
+  try {
+    // Save assigned IDs before any network request, ensuring retries are idempotent.
+    const missing = sales.filter(s => !s.id);
+    if (missing.length) {
+      const previous = sales.map(s => s.id);
+      for (const sale of missing) sale.id = crypto.randomUUID();
+      if (!saveSales()) {
+        sales.forEach((sale, i) => { if (previous[i] == null) delete sale.id; });
+        status.textContent = "Could not save permanent sale IDs in this browser. No upload attempted.";
+        return;
+      }
+    }
+    for (const sale of sales) {
+      try {
+        const result = await serverApi("/api/sales", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sale)
+        });
+        if (result.alreadyExists) already++; else uploaded++;
+      } catch (e) {
+        errors.push("Receipt #" + sale.no + ": " + e.message);
+      }
+    }
+    status.textContent = "Newly uploaded: " + uploaded + ". Already on server: " + already +
+      ". Failed/conflicting: " + errors.length + ". Local sales were not replaced." +
+      (errors.length ? " Review: " + errors.slice(0, 3).join(" | ") : "");
+  } finally { button.disabled = false; }
 }
 
 let payMethod = "cash";
