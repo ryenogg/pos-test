@@ -1852,6 +1852,18 @@ function renderExpenses() {
 // real security: that needs an online account system (a later step).
 const AUTH_KEY = "pos_auth_v1", CASHIERS_KEY = "pos_cashiers_v1";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let backendAuthEnabled = false;
+let backendOwnerConfigured = false;
+async function checkBackendAuth() {
+  try {
+    const r = await fetch("/api/auth/status", { credentials: "same-origin", cache: "no-store" });
+    if (!r.ok) return false;
+    const d = await r.json();
+    backendAuthEnabled = true; backendOwnerConfigured = !!d.configured;
+    return true;
+  } catch (_) { return false; }
+}
+
 let session = null;                 // null = logged out, or { role: "owner" }, or { role: "cashier", cashierId, name, shiftId }
 let auth = loadAuth();              // { pw: {salt, hash}, pin: {salt, hash} } once the owner account is set up
 let cashiers = loadCashiers();      // [{ id, name, active }]
@@ -1905,6 +1917,7 @@ function applyRole() {
 }
 
 function logout(msg) {
+  if (session && session.online) fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
   session = null;
   stopLive(); cart = []; $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = ""; setPayMethod("cash"); renderCart();
   showHome(msg);
@@ -1913,6 +1926,10 @@ function logout(msg) {
 // ----- owner: first-time setup and login -----
 async function doSetup() {
   const pw = $("suPw").value, pin = $("suPin").value, err = (t) => { $("suErr").textContent = t; };
+  if (await checkBackendAuth()) {
+    err("Online owner setup must be completed on the server computer first. Ask the person managing the server to follow README-backend.md, then return here and log in with the owner password.");
+    return;
+  }
   if (pw.length < 8) return err("The password needs at least 8 characters.");
   if (pw !== $("suPw2").value) return err("The two passwords don't match.");
   if (!/^\d{4,6}$/.test(pin)) return err("The PIN must be 4 to 6 digits.");
@@ -1937,6 +1954,20 @@ function setOwnerMode(m) {
 
 async function doOwnerLogin() {
   const msg = (t) => { $("olMsg").textContent = t; };
+  if (await checkBackendAuth()) {
+    if (!backendOwnerConfigured) return msg("The server owner account has not been set up yet. Set it up on the server computer first.");
+    if (ownerMode !== "password") return msg("Online owner login requires your owner password. Tap Back and choose Owner login again to switch to password mode.");
+    const password = $("olInput").value; $("olInput").value = "";
+    if (!password) return msg("Enter your owner password.");
+    try {
+      const r = await fetch("/api/auth/login", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return msg(d.error || "Owner login failed.");
+      session = { role: "owner", online: true };
+      msg(""); loadCart(); applyRole(); showTab("dashboard");
+    } catch (_) { msg("Could not reach the server. Check your connection and try again."); }
+    return;
+  }
   const wait = Math.ceil((lockUntil - Date.now()) / 1000);
   if (wait > 0) return msg("Too many wrong tries. Wait " + wait + " seconds.");
   const secret = $("olInput").value;
@@ -2926,7 +2957,20 @@ $("clearBtn").onclick = () => {
   if (cart.length) askConfirm("Remove everything from the cart?", "Yes", () => { cart = []; renderCart(); });
 };
 
-$("hOwner").onclick = () => { if (auth) { setOwnerMode("pin"); showPanel("hOwnerLogin"); } else showPanel("hSetup"); };
+$("hOwner").onclick = async () => {
+  const online = await checkBackendAuth();
+  if (online) {
+    if (!backendOwnerConfigured) {
+      showPanel("hSetup");
+      $("suErr").textContent = "This server needs its owner account set up on the server computer first. Follow README-backend.md; this screen cannot create the online account remotely.";
+      return;
+    }
+    setOwnerMode("password"); $("olSwitch").hidden = true; $("olForgot").hidden = true;
+    $("olForgotText").hidden = true; showPanel("hOwnerLogin"); return;
+  }
+  $("olSwitch").hidden = false;
+  if (auth) { setOwnerMode("pin"); showPanel("hOwnerLogin"); } else showPanel("hSetup");
+};
 $("hCashier").onclick = () => { $("hCashierPin").value = ""; showPanel("hCashierLogin"); refreshCashierPanel(); };
 document.querySelectorAll(".back").forEach(b => { b.onclick = () => showHome(); });
 $("suBtn").onclick = doSetup;
@@ -3256,6 +3300,15 @@ let deferredInstall = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; $("installBtn").hidden = false; });
 window.addEventListener("appinstalled", () => { $("installBtn").hidden = true; });
 $("installBtn").onclick = () => { if (!deferredInstall) return; deferredInstall.prompt(); deferredInstall = null; $("installBtn").hidden = true; };
+
+// Detect the backend when this page is served by the Shop POS server. The static GitHub Pages
+// copy remains in local-only mode and cannot use same-origin owner authentication.
+checkBackendAuth().then((online) => {
+  if (online) {
+    $("netHome").textContent = "Server connected · owner login uses server authentication";
+    $("netTop").textContent = "Server connected";
+  }
+});
 
 // The service worker keeps a copy of the app on the device so it opens with no internet
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
