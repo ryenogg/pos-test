@@ -635,6 +635,8 @@
     <button id="addExpenseBtn" type="button" class="primary" style="width:100%">Add expense</button>
   </div>
   <h2 class="sec" id="xTotal">Expenses</h2>
+  <button id="xUploadServer" type="button" onclick="uploadLocalExpensesToServer()">Upload local expenses to test server (owner only)</button>
+  <p id="xSyncStatus" class="meta" aria-live="polite">Manual upload only. No automatic download or delete synchronization yet.</p>
   <div id="xList"></div>
 </main>
 
@@ -1882,6 +1884,40 @@ function loadExpenses() {
 function saveExpenses() {
   try { localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses)); return true; }
   catch (e) { return false; }
+}
+
+
+/* Experimental one-way upload: no local replacement, remote import, or delete syncing. */
+async function uploadLocalExpensesToServer() {
+  const status = $("xSyncStatus");
+  if (!isOwner() || !session.online) {
+    status.textContent = "Sign in with the server owner account to upload expenses.";
+    return;
+  }
+  if (!expenses.length) { status.textContent = "There are no local expenses to upload."; return; }
+  if (!confirm("Upload " + expenses.length + " expenses from this browser to the server?\\n\\n" +
+    "This is an experimental one-way upload. Local expenses will remain unchanged. " +
+    "Deleted expenses are NOT synchronized. Do not use this on live shop data yet.")) return;
+  const button = $("xUploadServer");
+  button.disabled = true;
+  let uploaded = 0, already = 0;
+  const errors = [];
+  try {
+    for (const expense of expenses) {
+      try {
+        const result = await serverApi("/api/expenses", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(expense)
+        });
+        if (result.alreadyExists) already++; else uploaded++;
+      } catch (e) {
+        errors.push(String(expense.id || "(missing ID)") + ": " + e.message);
+      }
+    }
+    status.textContent = "Newly uploaded: " + uploaded + ". Already on server: " + already +
+      ". Failed/conflicting: " + errors.length + ". Local expenses were not changed." +
+      (errors.length ? " Review: " + errors.slice(0, 3).join(" | ") : "");
+  } finally { button.disabled = false; }
 }
 
 // How much expense falls between two dates. A "monthly" expense is spread evenly over the days of its month.
