@@ -70,7 +70,7 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
     method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
     body: JSON.stringify(product)
   });
-  assert.equal(saved.status, 200, "authenticated product save should work");
+  assert.equal(saved.status, 200, "authenticated product save should work: " + await saved.clone().text());
 
   const list = await fetch(base + "/api/products");
   const body = await list.json();
