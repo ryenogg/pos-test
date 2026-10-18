@@ -805,7 +805,7 @@ async function syncProductsAfterLogin() {
   savePendingProductDeletes(stillPending);
   render();
   if (!$("alertsView").hidden) renderAlerts();
-  const sameId = items.filter(it => remoteById.has(String(it.id))).length;
+
   alert("Product sync finished.\nAdded from server to this device: " + added.length +
     "\nUploaded local-only products: " + uploaded +
     "\nServer deletes completed: " + deleted +
