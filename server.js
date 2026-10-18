@@ -19,7 +19,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY, barcode TEXT UNIQUE, name TEXT NOT NULL,
     price INTEGER NOT NULL DEFAULT 0, cost INTEGER, stock INTEGER NOT NULL DEFAULT 0,
-    batches_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    batches_json TEXT NOT NULL DEFAULT '[]', metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS sales (
     id TEXT PRIMARY KEY, receipt_no INTEGER UNIQUE NOT NULL, date TEXT NOT NULL,
@@ -86,6 +86,7 @@ function ensureColumn(table, column, definition) {
 ensureColumn("products", "price", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("products", "batches_json", "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn("products", "updated_at", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("products", "metadata_json", "TEXT NOT NULL DEFAULT '{}'");
 ensureColumn("shifts", "metadata_json", "TEXT NOT NULL DEFAULT '{}'");
 ensureColumn("refunds", "metadata_json", "TEXT NOT NULL DEFAULT '{}'");
 
