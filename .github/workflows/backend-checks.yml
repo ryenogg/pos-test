@@ -25,5 +25,17 @@ jobs:
           node --check routes/products.js
           node --check routes/migration.js
           node --check test/smoke.test.js
+      - name: Check inline frontend JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script(?:\\s[^>]*)?>(.*?)</script>", html, flags=re.S | re.I)
+          if not scripts:
+              raise SystemExit("No inline script blocks found")
+          Path("/tmp/shop-pos-inline.js").write_text("\\n".join(scripts), encoding="utf-8")
+          PY
+          node --check /tmp/shop-pos-inline.js
       - name: Run isolated backend smoke test
         run: npm test
