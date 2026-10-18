@@ -1,9 +1,9 @@
 const express = require("express");
-module.exports = function migrationRouter(db) {
+module.exports = function migrationRouter(db, requireOwner) {
   const router = express.Router();
   const money = (v) => typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) : 0;
   const str = (v, fallback = null) => v == null || v === "" ? fallback : String(v);
-  router.post("/", (req, res) => {
+  router.post("/", requireOwner, (req, res) => {
     const data = req.body;
     const keys = ["items", "sales", "expenses", "shifts", "cashiers", "refunds"];
     if (!data || typeof data !== "object" || keys.some((k) => !Array.isArray(data[k]))) {

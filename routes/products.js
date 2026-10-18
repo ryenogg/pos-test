@@ -1,5 +1,5 @@
 const express = require("express");
-module.exports = function productsRouter(db) {
+module.exports = function productsRouter(db, requireOwner) {
   const router = express.Router();
   const isMoney = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100000000;
   const isStock = (v) => Number.isSafeInteger(v) && v >= 0 && v <= 1000000000;
@@ -9,7 +9,7 @@ module.exports = function productsRouter(db) {
       res.json({ ok: true, products: rows.map((r) => ({ id: r.id, barcode: r.barcode, name: r.name, price: r.price / 100, cost: r.cost == null ? null : r.cost / 100, stock: r.stock, batches: JSON.parse(r.batches_json || "[]"), created_at: r.created_at, updated_at: r.updated_at })) });
     } catch (e) { console.error("GET products failed", e); res.status(500).json({ ok: false, error: "Unable to load products" }); }
   });
-  router.post("/", (req, res) => {
+  router.post("/", requireOwner, (req, res) => {
     const p = req.body;
     const name = typeof p?.name === "string" ? p.name.trim() : "";
     if (!p || typeof p.id !== "string" || !p.id.trim() || p.id.length > 200 || !name || name.length > 300 ||
@@ -30,7 +30,7 @@ module.exports = function productsRouter(db) {
       console.error("POST product failed", e); res.status(500).json({ ok: false, error: "Unable to save product" });
     }
   });
-  router.delete("/:id", (req, res) => {
+  router.delete("/:id", requireOwner, (req, res) => {
     if (!req.params.id || req.params.id.length > 200) return res.status(400).json({ ok: false, error: "Invalid product id" });
     try { const result = db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id); res.json({ ok: true, deleted: result.changes > 0 }); }
     catch (e) { console.error("DELETE product failed", e); res.status(500).json({ ok: false, error: "Unable to delete product" }); }

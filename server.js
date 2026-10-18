@@ -91,11 +91,23 @@ ensureColumn("refunds", "metadata_json", "TEXT NOT NULL DEFAULT '{}'");
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "10mb", strict: true }));
-app.use("/api/auth", authRouter(db));
-app.use("/api/products", productsRouter(db));
-app.use("/api/migrate", migrationRouter(db));
-app.use(express.static(path.join(__dirname, "public")));
-app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+const auth = authRouter(db);
+app.use("/api/auth", auth);
+app.use("/api/products", productsRouter(db, auth.requireOwner));
+app.use("/api/migrate", migrationRouter(db, auth.requireOwner));
+
+// Serve only the known frontend files. Do not expose server.js, routes, data,
+// package files, or other backend files through a general root-directory static server.
+app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "index.html")));
+const frontendFiles = {
+  "/sw.js": "sw.js",
+  "/manifest.webmanifest": "manifest.webmanifest",
+  "/icon-192.png": "icon-192.png",
+  "/icon-512.png": "icon-512.png"
+};
+for (const [url, file] of Object.entries(frontendFiles)) {
+  app.get(url, (_req, res) => res.sendFile(path.join(__dirname, file)));
+}
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "shop-pos-server", time: new Date().toISOString() }));
 app.get("/api/status", (_req, res) => {
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all();
