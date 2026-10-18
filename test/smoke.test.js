@@ -106,8 +106,28 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
   assert.equal((await saveSale({ ...testSale, total: 26 })).status, 409, "same ID with changed amount must conflict");
   assert.equal((await saveSale({ ...testSale, id: "different-sale" })).status, 409, "same receipt with different ID must conflict");
   assert.equal((await saveSale({ ...testSale, id: "bad-sale", no: 2, lines: [] })).status, 400, "empty sales should be rejected");
+
+  const assignSale = (payload) => fetch(base + "/api/sales/assigned", {
+    method: "POST", headers: saleHeaders, body: JSON.stringify(payload)
+  });
+  const { no: unusedNo, ...unassigned } = testSale;
+  const assignedA = { ...unassigned, id: "assigned-sale-a" };
+  const assignedB = { ...unassigned, id: "assigned-sale-b" };
+  const firstAssigned = await assignSale(assignedA);
+  assert.equal(firstAssigned.status, 201, "server should assign a receipt");
+  const assignedAResult = await firstAssigned.json();
+  assert.equal(assignedAResult.sale.no, 2);
+  const secondAssigned = await assignSale(assignedB);
+  assert.equal(secondAssigned.status, 201);
+  assert.equal((await secondAssigned.json()).sale.no, 3, "separate sales receive unique sequential receipts");
+  const assignedRetry = await assignSale(assignedA);
+  assert.equal(assignedRetry.status, 200);
+  assert.equal((await assignedRetry.json()).sale.no, 2, "retry returns original receipt");
+  assert.equal((await assignSale({ ...assignedA, total: 27 })).status, 409, "changed sale cannot reuse ID");
+  assert.equal((await assignSale({ ...assignedA, no: 99 })).status, 400, "client cannot assign number on this endpoint");
+
   const listedSales = await (await fetch(base + "/api/sales", { headers: { Cookie: cookie } })).json();
-  assert.equal(listedSales.sales.length, 1);
+  assert.equal(listedSales.sales.length, 3);
   assert.deepEqual(listedSales.sales[0], testSale);
 
   const unauthorizedExpense = await fetch(base + "/api/expenses");
