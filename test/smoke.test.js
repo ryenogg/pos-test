@@ -47,6 +47,8 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
     body: JSON.stringify({ id: "test-product", name: "Test", price: 1, stock: 1 })
   });
   assert.equal(unauthorized.status, 401, "product writes require owner login");
+  const privateList = await fetch(base + "/api/products");
+  assert.equal(privateList.status, 401, "product inventory reads require owner login");
 
   const setup = await fetch(base + "/api/auth/setup", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -72,7 +74,7 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
   });
   assert.equal(saved.status, 200, "authenticated product save should work: " + await saved.clone().text());
 
-  const list = await fetch(base + "/api/products");
+  const list = await fetch(base + "/api/products", { headers: { Cookie: cookie } });
   const body = await list.json();
   assert.equal(body.products.length, 1);
   assert.equal(body.products[0].price, 12.5);
@@ -83,6 +85,6 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
     method: "DELETE", headers: { Cookie: cookie }
   });
   assert.equal(removed.status, 200, "authenticated product delete should work");
-  const after = await (await fetch(base + "/api/products")).json();
+  const after = await (await fetch(base + "/api/products", { headers: { Cookie: cookie } })).json();
   assert.equal(after.products.length, 0);
 });
