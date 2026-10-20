@@ -1393,6 +1393,8 @@ async function submitForm() {
 
   const proposed = old ? { ...old, ...fields } : { id: uid(), createdAt: Date.now(), ...fields };
   if (session && session.online && isOwner()) {
+    if (productSaveInProgress) return fail("A product save is already in progress. Please wait.");
+    productSaveInProgress = true;
     // The server must accept the edit before this browser reports success.
     const saveButton = $("formDlg").querySelector('button[onclick*="submitForm"]');
     if (saveButton) saveButton.disabled = true;
@@ -1402,9 +1404,11 @@ async function submitForm() {
         body: JSON.stringify(serverProductPayload(proposed))
       });
       if (result.updated_at) proposed.updated_at = result.updated_at;
+      productChangeGeneration++;
     } catch (e) {
       return fail("Server did not save this product. Your changes remain in the form; nothing was changed locally. " + e.message);
     } finally {
+      productSaveInProgress = false;
       if (saveButton) saveButton.disabled = false;
     }
   }
@@ -1799,6 +1803,8 @@ async function refreshSharedSales() {
 }
 
 /* Owner-only near-live read synchronization. Never upload local-only records. */
+let productSaveInProgress = false;
+let productChangeGeneration = 0;
 let liveSyncBusy = false;
 let liveSyncLastError = "";
 function liveSyncStatus(message, warning = false) {
@@ -1818,12 +1824,13 @@ async function pollLiveSync() {
   if (liveSyncBusy || !session || !session.online || !isOwner() || document.hidden) return;
   liveSyncBusy = true;
   const ownerSession = session;
+  const generationAtStart = productChangeGeneration;
   try {
     const snapshot = await serverApi("/api/sync/snapshot");
     if (session !== ownerSession) return;
     const remoteProducts = snapshot.products || [];
     // Do not change products while an edit form is open. The next poll will retry.
-    if (!$("formDlg").open) {
+    if (!$("formDlg").open && !productSaveInProgress && generationAtStart === productChangeGeneration) {
       const byId = new Map(remoteProducts.map(p => [String(p.id), p]));
       const localOnly = items.filter(p => !byId.has(String(p.id)));
       const next = [...localOnly, ...remoteProducts.map(p => migrateItem({ ...p }))];
