@@ -1328,7 +1328,7 @@ function openForm(id) {
   $("formDlg").showModal();
 }
 
-function submitForm() {
+async function submitForm() {
   const name = $("fName").value.trim();
   const barcode = $("fBarcode").value.trim();
   let price = parseFloat($("fPrice").value);
@@ -1391,15 +1391,31 @@ function submitForm() {
   }
   fields.priceHistory = history;
 
-  if (old) Object.assign(old, fields);
-  else items.push({ id: uid(), createdAt: Date.now(), ...fields });
+  const proposed = old ? { ...old, ...fields } : { id: uid(), createdAt: Date.now(), ...fields };
+  if (session && session.online && isOwner()) {
+    // The server must accept the edit before this browser reports success.
+    const saveButton = $("formDlg").querySelector('button[onclick*="submitForm"]');
+    if (saveButton) saveButton.disabled = true;
+    try {
+      const result = await serverApi("/api/products", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(serverProductPayload(proposed))
+      });
+      if (result.updated_at) proposed.updated_at = result.updated_at;
+    } catch (e) {
+      return fail("Server did not save this product. Your changes remain in the form; nothing was changed locally. " + e.message);
+    } finally {
+      if (saveButton) saveButton.disabled = false;
+    }
+  }
+  if (old) Object.assign(old, proposed);
+  else items.push(proposed);
   if (!saveItems()) {
     items = JSON.parse(beforeProducts);
-    return fail("Product could not be saved. Your previous inventory is unchanged.");
+    return fail(session && session.online && isOwner()
+      ? "Saved on the server, but this browser could not cache it. Log in again to refresh."
+      : "Product could not be saved. Your previous inventory is unchanged.");
   }
-  const savedItem = items.find(i => i.id === (old ? old.id : fields.id));
-  const syncItem = old || items[items.length - 1];
-  if (syncItem) void syncSavedProductToServer(syncItem);
   $("formDlg").close();
   render();
   if (!$("alertsView").hidden) renderAlerts();
