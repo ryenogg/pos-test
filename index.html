@@ -1798,6 +1798,72 @@ async function refreshSharedSales() {
   }
 }
 
+/* Owner-only near-live read synchronization. Never upload local-only records. */
+let liveSyncBusy = false;
+let liveSyncLastError = "";
+function liveSyncStatus(message, warning = false) {
+  let el = document.getElementById("liveSyncStatus");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "liveSyncStatus";
+    el.setAttribute("role", "status");
+    el.style.cssText = "position:fixed;bottom:8px;left:8px;z-index:90;padding:5px 10px;border-radius:8px;font-size:12px;background:#173b35;color:white;max-width:75vw";
+    document.body.appendChild(el);
+  }
+  el.hidden = !session || !session.online || !isOwner();
+  el.style.background = warning ? "#963b22" : "#173b35";
+  el.textContent = message;
+}
+async function pollLiveSync() {
+  if (liveSyncBusy || !session || !session.online || !isOwner() || document.hidden) return;
+  liveSyncBusy = true;
+  const ownerSession = session;
+  try {
+    const snapshot = await serverApi("/api/sync/snapshot");
+    if (session !== ownerSession) return;
+    const remoteProducts = snapshot.products || [];
+    // Do not change products while an edit form is open. The next poll will retry.
+    if (!$("formDlg").open) {
+      const byId = new Map(remoteProducts.map(p => [String(p.id), p]));
+      const localOnly = items.filter(p => !byId.has(String(p.id)));
+      const next = [...localOnly, ...remoteProducts.map(p => migrateItem({ ...p }))];
+      if (JSON.stringify(items) !== JSON.stringify(next)) {
+        const previous = items;
+        items = next;
+        if (!saveItems()) items = previous;
+        else {
+          render();
+          if (!$("alertsView").hidden) renderAlerts();
+          renderCart();
+        }
+      }
+    }
+    const remoteSales = snapshot.sales || [];
+    const saleIds = new Set(remoteSales.map(x => String(x.id)));
+    const nextSales = [...sales.filter(x => !x.id || !saleIds.has(String(x.id))), ...remoteSales];
+    if (JSON.stringify(sales) !== JSON.stringify(nextSales)) {
+      const previous = sales; sales = nextSales;
+      if (!saveSales()) sales = previous;
+      else { renderSales(); if (!$("dashboardView").hidden) renderDashboard(); }
+    }
+    const remoteExpenses = snapshot.expenses || [];
+    const expenseIds = new Set(remoteExpenses.map(x => String(x.id)));
+    const nextExpenses = [...expenses.filter(x => !expenseIds.has(String(x.id))), ...remoteExpenses.filter(x => !x.deletedAt)];
+    if (JSON.stringify(expenses) !== JSON.stringify(nextExpenses)) {
+      const previous = expenses; expenses = nextExpenses;
+      if (!saveExpenses()) expenses = previous;
+      else { renderExpenses(); if (!$("dashboardView").hidden) renderDashboard(); }
+    }
+    liveSyncLastError = "";
+    liveSyncStatus("Shared sync connected · updates every 3 seconds");
+  } catch (e) {
+    liveSyncLastError = e.message;
+    liveSyncStatus("Shared sync unavailable · changes may be outdated: " + e.message, true);
+  } finally { liveSyncBusy = false; }
+}
+setInterval(() => { void pollLiveSync(); }, 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) void pollLiveSync(); });
+
 /* Explicit one-way test upload. Legacy sales have no IDs, so assign and persist
    stable IDs before sending; never rewrite receipt numbers or local sale values. */
 async function uploadLocalSalesToServer() {
