@@ -27,7 +27,7 @@ module.exports = function productsRouter(db, requireOwner) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET barcode=excluded.barcode, name=excluded.name, price=excluded.price, cost=excluded.cost, stock=excluded.stock, batches_json=excluded.batches_json, metadata_json=excluded.metadata_json, updated_at=excluded.updated_at`)
         .run(p.id.trim(), p.barcode?.trim() || null, name, Math.round(p.price * 100), p.cost == null || p.cost === "" ? null : Math.round(p.cost * 100), p.stock ?? 0, JSON.stringify(p.batches || []), JSON.stringify(p.metadata || {}), now, now);
-      res.json({ ok: true, id: p.id.trim() });
+      res.json({ ok: true, id: p.id.trim(), updated_at: now });
     } catch (e) {
       if (String(e.code || "").startsWith("SQLITE_CONSTRAINT")) return res.status(409).json({ ok: false, error: "Product conflicts with an existing barcode or database constraint" });
       console.error("POST product failed", e); res.status(500).json({ ok: false, error: "Unable to save product" });
