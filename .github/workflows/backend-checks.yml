@@ -1,0 +1,43 @@
+name: Backend checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - add-shop-pos-backend
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check routes/auth.js
+          node --check routes/products.js
+          node --check routes/expenses.js
+          node --check routes/sales.js
+          node --check routes/migration.js
+          node --check test/smoke.test.js
+      - name: Check inline frontend JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S | re.I)
+          if not scripts:
+              raise SystemExit("No inline script blocks found")
+          Path("/tmp/shop-pos-inline.js").write_text(scripts[0], encoding="utf-8")
+          PY
+          node --check /tmp/shop-pos-inline.js
+      - name: Run isolated backend smoke test
+        run: npm test

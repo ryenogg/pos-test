@@ -1,6 +1,6 @@
 // Keeps a copy of the app on the device so it opens with no internet.
 // Change VERSION whenever you upload a new index.html, so old copies are replaced.
-const VERSION = "pos-v6";
+const VERSION = "pos-v8";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -18,7 +18,10 @@ self.addEventListener("activate", (e) => {
 // Open instantly from the saved copy, and refresh that copy in the background when online.
 self.addEventListener("fetch", (e) => {
   const req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  // API responses may contain account/session state and must never be cached offline.
+  if (url.pathname.startsWith("/api/")) return;
+  if (req.method !== "GET" || url.origin !== location.origin) return;
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then((cached) => {
       const network = fetch(req.url, { cache: "no-cache" })

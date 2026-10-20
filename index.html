@@ -419,6 +419,8 @@
   <h2 class="sec">Products sold in this period</h2>
   <div id="itemsSold"></div>
   <h2 class="sec">Receipts (tap one to open it)</h2>
+  <button id="salesUploadServer" type="button" onclick="uploadLocalSalesToServer()">Upload local sales to test server (owner only)</button>
+  <p id="salesSyncStatus" class="meta" aria-live="polite">Manual upload only. Sales remain in this browser.</p>
   <div id="salesList"></div>
   <button id="backupBtn" type="button" class="wide" style="margin-top:16px">Backup and restore</button>
 </main>
@@ -635,6 +637,8 @@
     <button id="addExpenseBtn" type="button" class="primary" style="width:100%">Add expense</button>
   </div>
   <h2 class="sec" id="xTotal">Expenses</h2>
+  <button id="xUploadServer" type="button" onclick="uploadLocalExpensesToServer()">Upload local expenses to test server (owner only)</button>
+  <p id="xSyncStatus" class="meta" aria-live="polite">Manual upload only. No automatic download or delete synchronization yet.</p>
   <div id="xList"></div>
 </main>
 
@@ -741,8 +745,95 @@ function loadItems() {
   catch (e) { return []; }    // storage empty or blocked: start with an empty list
 }
 function saveItems() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
-  catch (e) { alert("Could not save. Your browser may be blocking storage."); }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    return true;
+  } catch (e) {
+    alert("Could not save. Your browser may be blocking storage.");
+    return false;
+  }
+}
+
+const PENDING_PRODUCT_DELETES_KEY = "pos_pending_product_deletes_v1";
+function pendingProductDeletes() {
+  try { const v = JSON.parse(localStorage.getItem(PENDING_PRODUCT_DELETES_KEY) || "[]"); return Array.isArray(v) ? v : []; }
+  catch (_) { return []; }
+}
+function savePendingProductDeletes(ids) {
+  try { localStorage.setItem(PENDING_PRODUCT_DELETES_KEY, JSON.stringify([...new Set(ids)])); }
+  catch (_) { alert("A product delete could not be queued for server sync. Keep this browser data and retry while connected."); }
+}
+function serverProductPayload(it) {
+  return { id: String(it.id), barcode: it.barcode || null, name: it.name, price: Number(it.price), cost: typeof it.cost === "number" ? it.cost : null,
+    stock: Math.max(0, Math.floor(Number(it.stock) || 0)), batches: Array.isArray(it.batches) ? it.batches : [], metadata: it };
+}
+async function serverApi(path, options = {}) {
+  const r = await fetch(path, { credentials: "same-origin", ...options, headers: { ...(options.headers || {}) } });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ("Server request failed (" + r.status + ")"));
+  return d;
+}
+async function syncProductsAfterLogin() {
+  if (!session || !session.online) return;
+  const localCount = items.length;
+  let remote;
+  try { remote = (await serverApi("/api/products")).products || []; }
+  catch (e) { alert("Logged in, but couldn't load server products. Your local products were not changed. " + e.message); return; }
+  const localById = new Map(items.map(it => [String(it.id), it]));
+  const pendingDeletes = pendingProductDeletes();
+  const pendingDeleteSet = new Set(pendingDeletes.map(String));
+  const remoteById = new Map(remote.map(it => [String(it.id), it]));
+  const localOnly = items.filter(it => !remoteById.has(String(it.id)));
+  const remoteOnly = remote.filter(it => !localById.has(String(it.id)) && !pendingDeleteSet.has(String(it.id)));
+  const shared = items.length - localOnly.length;
+  const summary = "Product sync will safely merge the two lists.\n\n" +
+    "Products on this device: " + localCount + "\nProducts on server: " + remote.length +
+    "\nNew server products to add here: " + remoteOnly.length +
+    "\nLocal-only products to upload: " + localOnly.length +
+    "\nProducts with the same ID (kept local, not overwritten): " + shared +
+    "\nQueued deletes to apply to server: " + pendingDeletes.length +
+    "\n\nNothing on this device will be replaced. Continue?";
+  if (!confirm(summary)) return;
+  const added = [];
+  for (const it of remoteOnly) {
+    const clean = { ...it };
+    delete clean.created_at; delete clean.updated_at;
+    items.push(migrateItem(clean)); added.push(String(clean.id));
+  }
+  if (added.length && !saveItems()) {
+    const addedSet = new Set(added);
+    items = items.filter(it => !addedSet.has(String(it.id)));
+    alert("Product sync stopped: new products could not be saved on this device. No uploads or deletes were attempted.");
+    return;
+  }
+  let uploaded = 0, failed = [];
+  for (const it of localOnly) {
+    try { await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) }); uploaded++; }
+    catch (e) { failed.push(it.name + ": " + e.message); }
+  }
+  let deleted = 0, stillPending = [];
+  for (const id of pendingDeletes) {
+    try { await serverApi("/api/products/" + encodeURIComponent(id), { method: "DELETE" }); deleted++; }
+    catch (e) { stillPending.push(id); failed.push("Delete " + id + ": " + e.message); }
+  }
+  savePendingProductDeletes(stillPending);
+  render();
+  if (!$("alertsView").hidden) renderAlerts();
+
+  alert("Product sync finished.\nAdded from server to this device: " + added.length +
+    "\nUploaded local-only products: " + uploaded +
+    "\nServer deletes completed: " + deleted +
+    "\nSame-ID products kept local without overwriting server: " + shared +
+    (failed.length ? "\n\nSome items need attention:\n" + failed.slice(0, 8).join("\n") : "") +
+    (failed.length > 8 ? "\n…and " + (failed.length - 8) + " more." : ""));
+}
+async function syncSavedProductToServer(it) {
+  if (!session || !session.online) return;
+  try {
+    await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) });
+  } catch (e) {
+    alert("This product was saved on this device, but the server did not accept the update: " + e.message + "\nKeep this browser data. Log in again and use product sync to retry.");
+  }
 }
 
 /* =====================================================
@@ -1297,8 +1388,9 @@ function submitForm() {
                    supplierPrices: formRecords.map(({ isNew, ...r }) => r),
                    costSource: formRecords.some(r => r.id === formCostSource) ? formCostSource : null };
   const when = new Date().toISOString();
+  const beforeProducts = JSON.stringify(items);
   const old = editingId ? items.find(i => i.id === editingId) : null;
-  const history = old ? (old.priceHistory || []) : [];
+  const history = old ? [...(old.priceHistory || [])] : [];
   if (!old || toCents(old.price) !== toCents(price)) {       // every change of the selling price is written down
     history.push({ id: uid(), date: when, prev: old ? old.price : null, price, markup: markup ?? null, mode, by: whoName(), reason: $("fReason").value.trim() });
   }
@@ -1306,7 +1398,13 @@ function submitForm() {
 
   if (old) Object.assign(old, fields);
   else items.push({ id: uid(), createdAt: Date.now(), ...fields });
-  saveItems();
+  if (!saveItems()) {
+    items = JSON.parse(beforeProducts);
+    return fail("Product could not be saved. Your previous inventory is unchanged.");
+  }
+  const savedItem = items.find(i => i.id === (old ? old.id : fields.id));
+  const syncItem = old || items[items.length - 1];
+  if (syncItem) void syncSavedProductToServer(syncItem);
   $("formDlg").close();
   render();
   if (!$("alertsView").hidden) renderAlerts();
@@ -1316,9 +1414,23 @@ function fail(msg) { $("formError").textContent = msg; try { $("formError").scro
 function deleteItem(id) {
   const it = items.find(i => i.id === id);
   askConfirm("Delete “" + it.name + "”? This cannot be undone.", "Delete", () => {
-    items = items.filter(i => i.id !== id);
-    saveItems();
-    render();
+    const queued = pendingProductDeletes();
+    if (session && session.online) {
+      void (async () => {
+        try {
+          await serverApi("/api/products/" + encodeURIComponent(id), { method: "DELETE" });
+          savePendingProductDeletes(queued.filter(x => String(x) !== String(id)));
+        } catch (_) {
+          savePendingProductDeletes([...queued, id]);
+        }
+        items = items.filter(i => i.id !== id);
+        saveItems(); render();
+      })();
+    } else {
+      savePendingProductDeletes([...queued, id]);
+      items = items.filter(i => i.id !== id);
+      saveItems(); render();
+    }
   });
 }
 
@@ -1636,6 +1748,52 @@ function saveSales() {
   catch (e) { return false; }
 }
 
+
+/* Explicit one-way test upload. Legacy sales have no IDs, so assign and persist
+   stable IDs before sending; never rewrite receipt numbers or local sale values. */
+async function uploadLocalSalesToServer() {
+  const status = $("salesSyncStatus");
+  if (!isOwner() || !session.online) {
+    status.textContent = "Sign in with the server owner account to upload sales.";
+    return;
+  }
+  if (!sales.length) { status.textContent = "There are no local sales to upload."; return; }
+  if (!confirm("Upload " + sales.length + " sales from this browser to the TEST server?\\n\\n" +
+    "This is a one-way experimental upload. Local sales will not be replaced. " +
+    "Receipt number collisions will be reported, not resolved. Do not use real shop data.")) return;
+  const button = $("salesUploadServer");
+  button.disabled = true;
+  let uploaded = 0, already = 0;
+  const errors = [];
+  try {
+    // Save assigned IDs before any network request, ensuring retries are idempotent.
+    const missing = sales.filter(s => !s.id);
+    if (missing.length) {
+      const previous = sales.map(s => s.id);
+      for (const sale of missing) sale.id = crypto.randomUUID();
+      if (!saveSales()) {
+        sales.forEach((sale, i) => { if (previous[i] == null) delete sale.id; });
+        status.textContent = "Could not save permanent sale IDs in this browser. No upload attempted.";
+        return;
+      }
+    }
+    for (const sale of sales) {
+      try {
+        const result = await serverApi("/api/sales", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sale)
+        });
+        if (result.alreadyExists) already++; else uploaded++;
+      } catch (e) {
+        errors.push("Receipt #" + sale.no + ": " + e.message);
+      }
+    }
+    status.textContent = "Newly uploaded: " + uploaded + ". Already on server: " + already +
+      ". Failed/conflicting: " + errors.length + ". Local sales were not replaced." +
+      (errors.length ? " Review: " + errors.slice(0, 3).join(" | ") : "");
+  } finally { button.disabled = false; }
+}
+
 let payMethod = "cash";
 function setPayMethod(m) {
   if (m === "ewallet" && !canEwallet()) { showMsg("E-wallet payments are not allowed for your profile. Ask the owner."); m = "cash"; }
@@ -1686,7 +1844,93 @@ function takeStock(it, qty, date) {
   it.stock = it.batches.reduce((sum, b) => sum + b.qty, 0);
 }
 
+function planCheckoutStock() {
+  const remaining = new Map();
+  const allocations = new Array(cart.length);
+
+  // Reserve cashier-selected expiration dates before automatic allocations.
+  const order = [
+    ...cart.map((_, i) => i).filter(i => !!cart[i].date),
+    ...cart.map((_, i) => i).filter(i => !cart[i].date)
+  ];
+
+  for (const i of order) {
+    const line = cart[i];
+    const item = items.find(it => it.id === line.id);
+
+    if (!item) return { error: "A product in the cart no longer exists." };
+    if (!Number.isInteger(line.qty) || line.qty < 1)
+      return { error: "Invalid quantity for " + item.name + "." };
+
+    if (!remaining.has(item.id)) {
+      remaining.set(item.id, {
+        total: item.stock,
+        batches: (item.batches || []).map(b => ({ ...b }))
+      });
+    }
+
+    const stock = remaining.get(item.id);
+    if (stock.total < line.qty)
+      return { error: "Not enough stock for " + item.name + "." };
+
+    const batches = stock.batches;
+    const taken = [];
+
+    if (!batches.length) {
+      if (line.date)
+        return { error: "No matching expiration batch for " + item.name + "." };
+      taken.push({
+        date: null,
+        qty: line.qty,
+        cost: typeof item.cost === "number" ? item.cost : null
+      });
+    } else {
+      const candidates = batches
+        .filter(b => !line.date || (b.date || "none") === line.date)
+        .sort((a, b) => dateOrder(a.date).localeCompare(dateOrder(b.date)));
+
+      let needed = line.qty;
+
+      for (const batch of candidates) {
+        if (needed <= 0) break;
+        const used = Math.min(Math.max(0, batch.qty), needed);
+        if (used <= 0) continue;
+
+        taken.push({
+          date: batch.date,
+          qty: used,
+          cost: typeof batch.cost === "number"
+            ? batch.cost
+            : (typeof item.cost === "number" ? item.cost : null)
+        });
+
+        batch.qty -= used;
+        needed -= used;
+      }
+
+      if (needed > 0)
+        return { error: "Not enough stock for " + item.name +
+          (line.date ? " with the selected expiration date." : ".") };
+    }
+
+    stock.total -= line.qty;
+    allocations[i] = taken;
+  }
+
+  return { allocations, remaining };
+}
+
+function validateCheckoutStock() {
+  return planCheckoutStock().error || null;
+}
+
 function finishSale() {
+  const stockError = validateCheckoutStock();
+  if (stockError) {
+    showMsg(stockError);
+    return;
+  }
+
   if (cart.length === 0) { showMsg("Add at least one product before finishing the sale."); return; }
   if (!isOwner() && !(activeShift() && activeShift().id === session.shiftId)) {
     showMsg("Your shift is not open. Log out and start a new shift."); return;
@@ -1694,11 +1938,12 @@ function finishSale() {
 
   // Copy name, barcode and price into the sale, so old receipts stay correct even if prices change later
   // Two lines of the same product share one working copy of its batches, so the same stock is never counted twice
-  const sim = {};
-  const lines = cart.map(l => {
-    const it = items.find(i => i.id === l.id);
-    const copy = sim[it.id] || (sim[it.id] = (it.batches || []).map(b => ({ ...b })));
-    const taken = planTake(it, l.qty, l.date, copy, true);       // which dates these units really came from
+  const checkoutPlan = planCheckoutStock();
+  if (checkoutPlan.error) { showMsg(checkoutPlan.error); return; }
+
+  const lines = cart.map((l, i) => {
+    const it = items.find(item => item.id === l.id);
+    const taken = checkoutPlan.allocations[i];
     const cogs = takenCost(taken);                                 // what they cost us
     return { id: it.id, name: it.name, barcode: it.barcode, price: it.price, cost: cogs === null ? null : cogs / l.qty, qty: l.qty,
              expiry: l.date || null, taken };
@@ -1725,11 +1970,36 @@ function finishSale() {
                  shiftId: currentShiftId(),                                              // the cash drawer shift this sale belongs to
                  cashierId: isOwner() ? null : session.cashierId, cashier: whoName() };  // who made the sale
 
-  sales.push(sale);
-  if (!saveSales()) { sales.pop(); showMsg("Couldn't save the sale. Nothing was changed."); return; }
+  // Keep the original inventory for recovery if checkout saving fails.
+  const originalItems = JSON.stringify(items);
 
-  for (const l of cart) takeStock(items.find(i => i.id === l.id), l.qty, l.date);   // reduce stock
-  saveItems();
+  // Apply the exact batch allocations recorded in the sale.
+  for (const [id, stock] of checkoutPlan.remaining) {
+    const item = items.find(it => it.id === id);
+    item.batches = stock.batches;
+    item.stock = stock.batches.length
+      ? item.batches.reduce((sum, b) => sum + b.qty, 0)
+      : stock.total;
+  }
+
+  if (!saveItems()) {
+    items = JSON.parse(originalItems);
+    showMsg("Checkout stopped: inventory could not be saved. No sale was recorded.");
+    return;
+  }
+
+  sales.push(sale);
+  if (!saveSales()) {
+    sales.pop();
+    items = JSON.parse(originalItems);
+
+    if (!saveItems()) {
+      showMsg("URGENT: Sale saving failed and inventory could not be restored. Stop checkout and check stock.");
+    } else {
+      showMsg("Checkout stopped: sale could not be saved. Inventory was restored.");
+    }
+    return;
+  }
   cart = [];
   showMsg("");
   $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = ""; setPayMethod("cash");
@@ -1788,6 +2058,40 @@ function loadExpenses() {
 function saveExpenses() {
   try { localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses)); return true; }
   catch (e) { return false; }
+}
+
+
+/* Experimental one-way upload: no local replacement, remote import, or delete syncing. */
+async function uploadLocalExpensesToServer() {
+  const status = $("xSyncStatus");
+  if (!isOwner() || !session.online) {
+    status.textContent = "Sign in with the server owner account to upload expenses.";
+    return;
+  }
+  if (!expenses.length) { status.textContent = "There are no local expenses to upload."; return; }
+  if (!confirm("Upload " + expenses.length + " expenses from this browser to the server?\\n\\n" +
+    "This is an experimental one-way upload. Local expenses will remain unchanged. " +
+    "Deleted expenses are NOT synchronized. Do not use this on live shop data yet.")) return;
+  const button = $("xUploadServer");
+  button.disabled = true;
+  let uploaded = 0, already = 0;
+  const errors = [];
+  try {
+    for (const expense of expenses) {
+      try {
+        const result = await serverApi("/api/expenses", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(expense)
+        });
+        if (result.alreadyExists) already++; else uploaded++;
+      } catch (e) {
+        errors.push(String(expense.id || "(missing ID)") + ": " + e.message);
+      }
+    }
+    status.textContent = "Newly uploaded: " + uploaded + ". Already on server: " + already +
+      ". Failed/conflicting: " + errors.length + ". Local expenses were not changed." +
+      (errors.length ? " Review: " + errors.slice(0, 3).join(" | ") : "");
+  } finally { button.disabled = false; }
 }
 
 // How much expense falls between two dates. A "monthly" expense is spread evenly over the days of its month.
@@ -1852,6 +2156,18 @@ function renderExpenses() {
 // real security: that needs an online account system (a later step).
 const AUTH_KEY = "pos_auth_v1", CASHIERS_KEY = "pos_cashiers_v1";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let backendAuthEnabled = false;
+let backendOwnerConfigured = false;
+async function checkBackendAuth() {
+  try {
+    const r = await fetch("/api/auth/status", { credentials: "same-origin", cache: "no-store" });
+    if (!r.ok) return false;
+    const d = await r.json();
+    backendAuthEnabled = true; backendOwnerConfigured = !!d.configured;
+    return true;
+  } catch (_) { return false; }
+}
+
 let session = null;                 // null = logged out, or { role: "owner" }, or { role: "cashier", cashierId, name, shiftId }
 let auth = loadAuth();              // { pw: {salt, hash}, pin: {salt, hash} } once the owner account is set up
 let cashiers = loadCashiers();      // [{ id, name, active }]
@@ -1905,6 +2221,7 @@ function applyRole() {
 }
 
 function logout(msg) {
+  if (session && session.online) fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
   session = null;
   stopLive(); cart = []; $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = ""; setPayMethod("cash"); renderCart();
   showHome(msg);
@@ -1915,6 +2232,18 @@ async function doSetup() {
   const pw = $("suPw").value, pin = $("suPin").value, err = (t) => { $("suErr").textContent = t; };
   if (pw.length < 8) return err("The password needs at least 8 characters.");
   if (pw !== $("suPw2").value) return err("The two passwords don't match.");
+  if (await checkBackendAuth()) {
+    try {
+      const r = await fetch("/api/auth/setup", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return err(d.error || "Online owner setup failed. Make sure you are on the server computer.");
+      backendOwnerConfigured = true;
+      for (const id of ["suPw", "suPw2", "suPin", "suPin2"]) $(id).value = "";
+      err(""); setOwnerMode("password"); $("olSwitch").hidden = true; $("olForgot").hidden = true;
+      showPanel("hOwnerLogin"); $("olMsg").textContent = "Owner account created. Log in with the password you just set.";
+    } catch (_) { err("Could not reach the server. Try again on the server computer."); }
+    return;
+  }
   if (!/^\d{4,6}$/.test(pin)) return err("The PIN must be 4 to 6 digits.");
   if (pin !== $("suPin2").value) return err("The two PINs don't match.");
   try { auth = { pw: await hashSecret(pw), pin: await hashSecret(pin) }; }
@@ -1937,6 +2266,21 @@ function setOwnerMode(m) {
 
 async function doOwnerLogin() {
   const msg = (t) => { $("olMsg").textContent = t; };
+  if (await checkBackendAuth()) {
+    if (!backendOwnerConfigured) return msg("The server owner account has not been set up yet. Set it up on the server computer first.");
+    if (ownerMode !== "password") return msg("Online owner login requires your owner password. Tap Back and choose Owner login again to switch to password mode.");
+    const password = $("olInput").value; $("olInput").value = "";
+    if (!password) return msg("Enter your owner password.");
+    try {
+      const r = await fetch("/api/auth/login", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return msg(d.error || "Owner login failed.");
+      session = { role: "owner", online: true };
+      msg(""); loadCart(); applyRole(); showTab("dashboard");
+      void syncProductsAfterLogin();
+    } catch (_) { msg("Could not reach the server. Check your connection and try again."); }
+    return;
+  }
   const wait = Math.ceil((lockUntil - Date.now()) / 1000);
   if (wait > 0) return msg("Too many wrong tries. Wait " + wait + " seconds.");
   const secret = $("olInput").value;
@@ -2176,8 +2520,13 @@ function addPayout() {
   const sh = activeShift(); if (!sh) return;
   const amount = parseFloat($("dPayAmt").value);
   if (isNaN(amount) || amount <= 0) { $("dPayErr").textContent = "Enter an amount greater than 0."; return; }
-  sh.payouts.push({ id: uid(), time: new Date().toISOString(), amount: r2(amount), note: $("dPayNote").value.trim(), by: whoName() });
-  saveShifts();
+  const payout = { id: uid(), time: new Date().toISOString(), amount: r2(amount), note: $("dPayNote").value.trim(), by: whoName() };
+  sh.payouts.push(payout);
+  if (!saveShifts()) {
+    sh.payouts.pop();
+    $("dPayErr").textContent = "Payout was not saved. Please try again.";
+    return;
+  }
   $("dPayAmt").value = ""; $("dPayNote").value = "";
   renderDrawer();
 }
@@ -2191,11 +2540,16 @@ function closeShift() {
   askConfirm(isOwner() ? "Close this shift? Expected " + money(f.expected) + ", counted " + money(r2(actual)) + "."
                        : (cart.length ? "The cart still has products, and they will be discarded. " : "") + "Close your shift with " + money(r2(actual)) + " counted?", "Yes", () => {
     // Save the final numbers with the shift, so the history stays the same later
+    const previousShift = { ...sh };
     Object.assign(sh, { closedAt: new Date().toISOString(), saleCount: f.count, cashCount: f.cashCount, cashSales: f.cashSales,
                         ewCount: f.ewCount, ewSales: f.ewSales, cashRefunds: f.cashRefunds, refundCount: f.refundCount,
                         payoutTotal: f.payouts, expected: f.expected, actual: r2(actual), difference: r2(actual - f.expected),
                         closeNote: $("dCloseNote").value.trim(), closedBy: whoName() });
-    saveShifts();
+    if (!saveShifts()) {
+      Object.assign(sh, previousShift);
+      $("dCloseErr").textContent = "Shift could not be saved. It is still open; please try again.";
+      return;
+    }
     justClosedId = sh.id;
     $("dActual").value = ""; $("dCloseNote").value = "";
     if (!isOwner()) { cart = []; saveCart(); logout("Shift closed. Your cash count of " + money(r2(actual)) + " was recorded. Thank you!"); return; }
@@ -2234,7 +2588,13 @@ function renderDrawer() {
       const right = document.createElement("span"); right.style.cssText = "display:flex;gap:8px;align-items:center";
       const amt = document.createElement("strong"); amt.textContent = money(pay.amount);
       const del = button("Remove", () => askConfirm("Remove this " + money(pay.amount) + " payout?", "Remove", () => {
-        sh.payouts = sh.payouts.filter(x => x.id !== pay.id); saveShifts(); renderDrawer();
+        const oldPayouts = sh.payouts;
+        sh.payouts = sh.payouts.filter(x => x.id !== pay.id);
+        if (!saveShifts()) {
+          sh.payouts = oldPayouts;
+          alert("Payout removal could not be saved. Nothing was removed.");
+        }
+        renderDrawer();
       }));
       del.className = "danger"; del.style.padding = "4px 10px";
       right.append(amt, del);
@@ -2453,10 +2813,26 @@ function processRefund() {
     const rf = { id: uid(), no, date: new Date().toISOString(), saleNo: sale.no, method: ewallet ? "ewallet" : "cash", reference,
                  reason, note: $("rfNote").value.trim(), restock, lines, amount, shiftId: currentShiftId(),
                  cashierId: isOwner() ? null : session.cashierId, by: whoName() };
-    refunds.push(rf);
-    if (!saveRefunds()) { refunds.pop(); return err("Couldn't save the refund. Nothing was changed."); }
+    // Save restocked inventory first. If the refund cannot be saved, restore the old inventory.
+    const beforeItems = JSON.stringify(items);
     let missing = 0;
-    if (restock) { for (const l of lines) if (!returnToStock(l)) missing++; saveItems(); render(); }
+    if (restock) {
+      for (const l of lines) if (!returnToStock(l)) missing++;
+      if (!saveItems()) {
+        items = JSON.parse(beforeItems);
+        return err("Refund stopped: restocked inventory could not be saved. No refund recorded.");
+      }
+    }
+    refunds.push(rf);
+    if (!saveRefunds()) {
+      refunds.pop();
+      if (restock) {
+        items = JSON.parse(beforeItems);
+        if (!saveItems()) return err("URGENT: Refund was not saved and stock rollback failed. Stop and check inventory.");
+      }
+      return err("Refund could not be saved. Inventory was restored; no refund recorded.");
+    }
+    if (restock) render();
     refundSale = null;
     $("rfSearch").value = "";
     renderRefunds();
@@ -2741,16 +3117,38 @@ function restoreBackup() {
                           typeof i.price === "number" && typeof i.stock === "number") &&
     data.sales.every(x => x && typeof x.no === "number" && typeof x.total === "number" && Array.isArray(x.lines));
   if (!ok) { $("backupMsg").textContent = "That doesn't look like a backup from this app. Nothing was changed."; return; }
-  askConfirm("Replace all current products and sales with this backup?", "Yes", () => {
-    items = data.items.map(migrateItem); sales = data.sales;
-    expenses = Array.isArray(data.expenses) ? data.expenses : []; saveExpenses();
-    shifts = Array.isArray(data.shifts) ? data.shifts.map(sh => { delete sh.selfie; return sh; }) : []; saveShifts();
-    cashiers = Array.isArray(data.cashiers) ? data.cashiers : cashiers; saveCashiers();
-    refunds = Array.isArray(data.refunds) ? data.refunds : []; saveRefunds();
-    adjustments = Array.isArray(data.adjustments) ? data.adjustments : []; saveAdjustments();
-    categories = Array.isArray(data.categories) ? data.categories : []; saveCategories();
-    suppliers = Array.isArray(data.suppliers) ? data.suppliers : []; saveSuppliers();
-    saveItems(); saveSales();
+  askConfirm("Replace ALL local POS data (products, sales, expenses, shifts, staff, refunds, adjustments, categories and suppliers)? Make a backup first.", "Restore", () => {
+    const next = {
+      [STORAGE_KEY]: data.items.map(it => migrateItem({ ...it })),
+      [SALES_KEY]: data.sales,
+      [EXPENSES_KEY]: Array.isArray(data.expenses) ? data.expenses : [],
+      [SHIFTS_KEY]: Array.isArray(data.shifts) ? data.shifts.map(sh => { const copy = { ...sh }; delete copy.selfie; return copy; }) : [],
+      [REFUNDS_KEY]: Array.isArray(data.refunds) ? data.refunds : [],
+      [ADJ_KEY]: Array.isArray(data.adjustments) ? data.adjustments : [],
+      [CATS_KEY]: Array.isArray(data.categories) ? data.categories : [],
+      [SUPS_KEY]: Array.isArray(data.suppliers) ? data.suppliers : []
+    };
+    // Do not replace cashier records if an older backup omitted them.
+    if (Array.isArray(data.cashiers)) next[CASHIERS_KEY] = data.cashiers;
+    const old = {};
+    try {
+      for (const key of Object.keys(next)) old[key] = localStorage.getItem(key);
+      for (const [key, value] of Object.entries(next)) localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      let rollbackFailed = false;
+      for (const [key, value] of Object.entries(old)) {
+        try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+        catch (_) { rollbackFailed = true; }
+      }
+      $("backupMsg").textContent = rollbackFailed
+        ? "URGENT: Restore failed and rollback also failed. Do not continue until data is checked."
+        : "Restore failed; previous browser data was restored. No changes loaded.";
+      return;
+    }
+    items = next[STORAGE_KEY]; sales = next[SALES_KEY]; expenses = next[EXPENSES_KEY];
+    shifts = next[SHIFTS_KEY]; refunds = next[REFUNDS_KEY]; adjustments = next[ADJ_KEY];
+    categories = next[CATS_KEY]; suppliers = next[SUPS_KEY];
+    if (Array.isArray(data.cashiers)) cashiers = data.cashiers;
     cart = [];
     render(); renderSales(); renderCart();
     $("backupDlg").close();
@@ -2926,7 +3324,20 @@ $("clearBtn").onclick = () => {
   if (cart.length) askConfirm("Remove everything from the cart?", "Yes", () => { cart = []; renderCart(); });
 };
 
-$("hOwner").onclick = () => { if (auth) { setOwnerMode("pin"); showPanel("hOwnerLogin"); } else showPanel("hSetup"); };
+$("hOwner").onclick = async () => {
+  const online = await checkBackendAuth();
+  if (online) {
+    if (!backendOwnerConfigured) {
+      showPanel("hSetup");
+      $("suErr").textContent = "This server needs its owner account set up on the server computer first. Follow README-backend.md; this screen cannot create the online account remotely.";
+      return;
+    }
+    setOwnerMode("password"); $("olSwitch").hidden = true; $("olForgot").hidden = true;
+    $("olForgotText").hidden = true; showPanel("hOwnerLogin"); return;
+  }
+  $("olSwitch").hidden = false;
+  if (auth) { setOwnerMode("pin"); showPanel("hOwnerLogin"); } else showPanel("hSetup");
+};
 $("hCashier").onclick = () => { $("hCashierPin").value = ""; showPanel("hCashierLogin"); refreshCashierPanel(); };
 document.querySelectorAll(".back").forEach(b => { b.onclick = () => showHome(); });
 $("suBtn").onclick = doSetup;
@@ -3102,6 +3513,7 @@ function saveStockCheck() {
   const net = r2(changes.reduce((t, c) => t + (c.counted - c.expected) * unitCostOf(c.it, c.b), 0));
   askConfirm(changes.length + (changes.length === 1 ? " difference" : " differences") + " found. The value of your stock changes by " + money(net) + ". Save?", "Save", () => {
     const note = $("stNote").value.trim();
+    const oldItems = JSON.stringify(items), oldAdjustments = JSON.stringify(adjustments);
     for (const c of changes) {
       logAdjustment(c.it, c.b ? c.b.date : null, "count", c.expected, c.counted, unitCostOf(c.it, c.b), note);
       if (c.b) c.b.qty = c.counted; else c.it.stock = c.counted;
@@ -3110,7 +3522,15 @@ function saveStockCheck() {
       it.batches = it.batches.filter(b => b.qty > 0);
       it.stock = it.batches.reduce((t, b) => t + b.qty, 0);
     }
-    saveItems(); saveAdjustments();
+    if (!saveItems()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      return msg("Stock check not saved. Inventory remains unchanged.");
+    }
+    if (!saveAdjustments()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      if (!saveItems()) return msg("URGENT: Stock adjustment history failed and inventory rollback failed. Stop and verify stock.");
+      return msg("Stock check history could not be saved. Inventory was restored.");
+    }
     stockCounts = {}; $("stNote").value = "";
     render(); renderStock();
     msg("Saved " + changes.length + (changes.length === 1 ? " change." : " changes."));
@@ -3121,10 +3541,20 @@ function saveStockCheck() {
 function discardBatch(it, b) {
   const cost = unitCostOf(it, b), value = r2(b.qty * cost);
   askConfirm("Discard ×" + b.qty + " of " + it.name + " (expired " + niceDate(b.date) + ")? It is removed from stock and counted as a loss of " + money(value) + ".", "Discard", () => {
+    const oldItems = JSON.stringify(items), oldAdjustments = JSON.stringify(adjustments);
     logAdjustment(it, b.date, "discard", b.qty, 0, cost, "Expired and discarded");
     it.batches = it.batches.filter(x => x !== b);
     it.stock = it.batches.reduce((t, x) => t + x.qty, 0);
-    saveItems(); saveAdjustments();
+    if (!saveItems()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      alert("Discard not saved. Inventory remains unchanged."); return;
+    }
+    if (!saveAdjustments()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      if (!saveItems()) alert("URGENT: Discard history failed and inventory rollback failed. Verify stock.");
+      else alert("Discard history could not be saved. Inventory was restored.");
+      return;
+    }
     render(); renderAlerts();
   });
 }
@@ -3232,7 +3662,7 @@ function closeMenu() { $("sideMenu").classList.remove("open"); $("menuBackdrop")
 function goHome() { showTab(isOwner() ? "dashboard" : "checkout"); }
 
 /* ---- Offline and install support ---- */
-const APP_VERSION = "6";     // change this number when you upload a new copy, so you can tell which one is running
+const APP_VERSION = "8";     // change this number when you upload a new copy, so you can tell which one is running
 $("verHome").textContent = $("verMenu").textContent = "Version " + APP_VERSION;
 
 // Until server sync exists, everything is saved on this device only, and the badge says so.
@@ -3256,6 +3686,15 @@ let deferredInstall = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; $("installBtn").hidden = false; });
 window.addEventListener("appinstalled", () => { $("installBtn").hidden = true; });
 $("installBtn").onclick = () => { if (!deferredInstall) return; deferredInstall.prompt(); deferredInstall = null; $("installBtn").hidden = true; };
+
+// Detect the backend when this page is served by the Shop POS server. The static GitHub Pages
+// copy remains in local-only mode and cannot use same-origin owner authentication.
+checkBackendAuth().then((online) => {
+  if (online) {
+    $("netHome").textContent = "Server connected · owner login uses server authentication";
+    $("netTop").textContent = "Server connected";
+  }
+});
 
 // The service worker keeps a copy of the app on the device so it opens with no internet
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
