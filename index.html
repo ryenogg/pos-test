@@ -1959,7 +1959,55 @@ function validateCheckoutStock() {
   return planCheckoutStock().error || null;
 }
 
-function finishSale() {
+async function finishSale() {
+  if (session && session.online && isOwner()) {
+    if (!cart.length) return showMsg("Add at least one product before finishing the sale.");
+    const total = Math.round(cart.reduce((sum, l) => sum + Number(l.price) * l.qty, 0) * 100) / 100;
+    let received = total, reference = "", payNote = "";
+    if (payMethod === "ewallet") {
+      if (!canEwallet()) return showMsg("E-wallet payments are not allowed for your profile.");
+      reference = $("ewRef").value.trim();
+      if (!reference) return showMsg("Enter the e-wallet reference number.");
+      payNote = $("ewNote").value.trim();
+    } else {
+      const entered = parseFloat($("received").value);
+      if (Number.isFinite(entered)) received = entered;
+      if (Math.round(received * 100) < Math.round(total * 100))
+        return showMsg("The amount received is less than the total.");
+    }
+    // Preserve the request ID across network retries, so a timeout cannot create a second sale.
+    if (!window.pendingServerCheckout) window.pendingServerCheckout = {
+      id: crypto.randomUUID(), method: payMethod, received, reference, payNote,
+      lines: cart.map(l => ({ id: String(l.id), name: l.name, price: l.price,
+        qty: l.qty, custom: !!l.custom, expiry: l.date || null }))
+    };
+    const request = window.pendingServerCheckout;
+    try {
+      const result = await serverApi("/api/checkout", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request)
+      });
+      const sale = result.sale;
+      // Keep a local receipt copy, but the server is authoritative.
+      if (!sales.some(s => s.id === sale.id)) { sales.push(sale); saveSales(); }
+      window.pendingServerCheckout = null;
+      cart = [];
+      saveCart();
+      $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = "";
+      setPayMethod("cash"); setPanelOpen(false); renderCart();
+      try {
+        const remote = (await serverApi("/api/products")).products || [];
+        items = remote.map(it => migrateItem({ ...it }));
+        saveItems();
+      } catch (_) { showMsg("Sale saved on server. Refresh product stock after reconnecting."); }
+      render();
+      showReceipt(sale);
+    } catch (e) {
+      showMsg("Checkout was not confirmed: " + e.message +
+        ". Do not change the cart before retrying. The same request ID will be used.");
+    }
+    return;
+  }
   const stockError = validateCheckoutStock();
   if (stockError) {
     showMsg(stockError);
