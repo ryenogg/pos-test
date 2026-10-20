@@ -309,10 +309,21 @@
     <button id="cartScanBtn" type="button">Scan</button>
   </div>
   <div class="sugg" id="sugg"></div>
+  <button id="customSaleBtn" type="button" style="width:100%;margin:8px 0">+ Custom sale (not in inventory)</button>
   <h2 class="sec">Browse products</h2>
   <input id="browseSearch" placeholder="Search products" autocomplete="off">
   <div id="browseList" style="margin-top:8px"></div>
 </main>
+
+<dialog id="customSaleDlg">
+  <h2 style="margin-top:0">Custom sale</h2>
+  <p class="meta">Appears on the receipt without creating a product or changing inventory stock.</p>
+  <label for="customName">Item name *</label><input id="customName" maxlength="120" autocomplete="off">
+  <label for="customPrice">Selling price *</label><input id="customPrice" type="number" inputmode="decimal" min="0.01" step="0.01">
+  <label for="customQty">Quantity *</label><input id="customQty" type="number" inputmode="numeric" min="1" max="999" step="1" value="1">
+  <p id="customError" class="error" role="alert"></p>
+  <div class="row"><button id="customCancel" type="button">Cancel</button><button id="customAdd" class="primary" type="button">Add to cart</button></div>
+</dialog>
 
 <!-- Add / edit form -->
 <dialog id="formDlg">
@@ -952,7 +963,7 @@ function render() {
 
   const sorter = SORTERS[$("sortSel").value] || byName;
   const shown = items
-    .filter(i => i.name.toLowerCase().includes(q) || i.barcode.includes(q))
+    .filter(i => i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q))
     .filter(i => cf === "" || (cf === "none" ? !catName(i) : i.categoryId === cf))
     .sort(sorter);
 
@@ -1503,7 +1514,7 @@ function stopScan() {
    5. CHECKOUT – the cart (step 2)
    ===================================================== */
 let lastAddedId = null, cartTotal = 0;
-let cart = [];   // each line: { id: the item's id, qty: how many }
+let cart = [];   // inventory lines or one-off custom lines
 
 function button(text, fn) {
   const b = document.createElement("button");
@@ -1528,7 +1539,7 @@ function loadCart() {
   try {
     const d = JSON.parse(localStorage.getItem(cartKey()));
     if (d && Array.isArray(d.lines) && (isOwner() || d.shiftId === session.shiftId)) {     // a cashier's cart only lasts for their shift
-      cart = d.lines.filter(l => l && typeof l.id === "string" && l.qty > 0);
+      cart = d.lines.filter(l => l && typeof l.id === "string" && Number.isInteger(l.qty) && l.qty > 0 && (!l.custom || (typeof l.name === "string" && l.name.trim() && Number.isFinite(l.price) && l.price > 0)));
       if (d.payMethod === "ewallet" && canEwallet()) setPayMethod("ewallet");
     }
   } catch (e) { cart = []; }
@@ -1574,7 +1585,7 @@ function renderBrowse() {
   const q = $("browseSearch").value.trim().toLowerCase();
   const list = $("browseList");
   list.textContent = "";
-  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q)).sort(byName).slice(0, 40);
+  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q)).sort(byName).slice(0, 40);
   if (!shown.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = items.length ? "No products match your search." : "No products yet."; list.appendChild(p); }
   for (const it of shown) {
     const row = document.createElement("button"); row.className = "srow";
@@ -1607,12 +1618,30 @@ function addToCart(code) {
   }
 }
 
+function addCustomSale() {
+  const name = $("customName").value.trim();
+  const price = Number($("customPrice").value);
+  const qty = Number($("customQty").value);
+  const err = message => { $("customError").textContent = message; };
+  if (!name) return err("Enter an item name.");
+  if (!$("customPrice").value.trim() || !Number.isFinite(price) || price <= 0 || Math.abs(price * 100 - Math.round(price * 100)) > 1e-7)
+    return err("Enter a positive price with at most two decimal places.");
+  if (!Number.isSafeInteger(qty) || qty < 1 || qty > 999) return err("Enter a quantity from 1 to 999.");
+  const line = { id: "custom:" + uid(), custom: true, name, price, qty };
+  cart.push(line);
+  $("customSaleDlg").close();
+  lastAddedId = line.id;
+  renderCart();
+  toast("Added custom sale: " + name);
+}
+
 // How many units of a product (optionally one expiration date) are already in the cart
 const cartQty = (id, date) => cart.filter(l => l.id === id && (l.date || null) === (date || null)).reduce((t, l) => t + l.qty, 0);
 const inCart = (id) => cart.filter(l => l.id === id).reduce((t, l) => t + l.qty, 0);
 
 // The most a cart line can hold: a dated line is limited by that date's stock, an undated line by what is left in total
 function lineMax(line) {
+  if (line.custom) return 999;
   const it = items.find(i => i.id === line.id);
   if (!it) return 0;
   if (line.date) return (it.batches || []).filter(b => (b.date || "none") === line.date).reduce((t, b) => t + b.qty, 0);
@@ -1659,7 +1688,7 @@ function askExpiry(item, options) {
 }
 
 function setQty(line, qty) {
-  const item = items.find(i => i.id === line.id);
+  const item = line.custom ? line : items.find(i => i.id === line.id);
   if (!item || !cart.includes(line)) return;
   if (isNaN(qty) || qty < 1) qty = 1;
   const max = lineMax(line);
@@ -1673,7 +1702,7 @@ function removeLine(line) { cart = cart.filter(l => l !== line); renderCart(); }
 
 function renderCart() {
   // keep the cart honest if items were deleted or stock changed on the Products tab
-  cart = cart.filter(l => items.some(i => i.id === l.id && i.stock > 0) && lineMax(l) > 0);
+  cart = cart.filter(l => l.custom ? (typeof l.name === "string" && l.name.trim() && Number.isFinite(l.price) && l.price > 0 && Number.isInteger(l.qty) && l.qty > 0) : items.some(i => i.id === l.id && i.stock > 0) && lineMax(l) > 0);
   cart.forEach(l => { const m = lineMax(l); if (l.qty > m) l.qty = m; });
 
   const box = $("cart");
@@ -1688,13 +1717,13 @@ function renderCart() {
   }
 
   cart.forEach((line, n) => {          // n starts at 0, so the row number is n + 1
-    const item = items.find(i => i.id === line.id);
+    const item = line.custom ? line : items.find(i => i.id === line.id);
     total += item.price * line.qty; units += line.qty;
 
     const row = document.createElement("div"); row.className = "cart-row"; row.dataset.id = line.id + (line.date || "");
     const top = document.createElement("div"); top.className = "cart-top";
     const num = document.createElement("span"); num.className = "num"; num.textContent = (n + 1) + ".";
-    const name = document.createElement("span"); name.className = "name"; name.textContent = item.name + (line.date ? " · exp. " + niceDate(line.date) : "");
+    const name = document.createElement("span"); name.className = "name"; name.textContent = item.name + (line.custom ? " · Custom sale" : line.date ? " · exp. " + niceDate(line.date) : "");
     const sum = document.createElement("span"); sum.className = "price"; sum.textContent = money(item.price * line.qty);
     top.append(num, name, sum);
 
@@ -1856,6 +1885,12 @@ function planCheckoutStock() {
 
   for (const i of order) {
     const line = cart[i];
+    if (line.custom) {
+      if (!line.name || !Number.isFinite(line.price) || line.price <= 0 || !Number.isInteger(line.qty) || line.qty < 1)
+        return { error: "Invalid custom sale item." };
+      allocations[i] = [];
+      continue;
+    }
     const item = items.find(it => it.id === line.id);
 
     if (!item) return { error: "A product in the cart no longer exists." };
@@ -1942,6 +1977,8 @@ function finishSale() {
   if (checkoutPlan.error) { showMsg(checkoutPlan.error); return; }
 
   const lines = cart.map((l, i) => {
+    if (l.custom) return { id: l.id, custom: true, name: l.name, barcode: null, price: l.price,
+      cost: null, qty: l.qty, expiry: null, taken: [] };
     const it = items.find(item => item.id === l.id);
     const taken = checkoutPlan.allocations[i];
     const cogs = takenCost(taken);                                 // what they cost us
@@ -2750,6 +2787,7 @@ function renderRefunds() {
 
 // Puts refunded goods back on the shelf, on the earliest expiration date the item already has
 function returnToStock(l) {
+  if (l.custom) return false;
   const it = items.find(i => i.id === l.id) || items.find(i => (l.barcode && i.barcode === l.barcode) || i.name === l.name);
   if (!it) return false;
 
@@ -2794,7 +2832,7 @@ function processRefund() {
   const lines = [];
   sale.lines.forEach((l, idx) => {
     const q = rfQty[idx] || 0;
-    if (q > 0) lines.push({ lineIndex: idx, id: l.id || null, name: l.name, barcode: l.barcode, price: l.price, cost: l.cost, qty: q,
+    if (q > 0) lines.push({ lineIndex: idx, id: l.id || null, custom: !!l.custom, name: l.name, barcode: l.barcode, price: l.price, cost: l.cost, qty: q,
                          taken: l.taken || null, prior: refundedQty(sale.no, idx) });
   });
   if (!lines.length) return err("Enter the quantity to refund for at least one product.");
@@ -2817,7 +2855,7 @@ function processRefund() {
     const beforeItems = JSON.stringify(items);
     let missing = 0;
     if (restock) {
-      for (const l of lines) if (!returnToStock(l)) missing++;
+      for (const l of lines) if (!l.custom && !returnToStock(l)) missing++;
       if (!saveItems()) {
         items = JSON.parse(beforeItems);
         return err("Refund stopped: restocked inventory could not be saved. No refund recorded.");
@@ -3308,6 +3346,12 @@ $("photoInput").onchange = (e) => readPhoto(e.target.files[0]);
 $("scanDlg").addEventListener("close", stopScan);
 $("search").addEventListener("input", render);
 
+$("customSaleBtn").onclick = () => {
+  $("customName").value = ""; $("customPrice").value = ""; $("customQty").value = "1";
+  $("customError").textContent = ""; $("customSaleDlg").showModal(); $("customName").focus();
+};
+$("customCancel").onclick = () => $("customSaleDlg").close();
+$("customAdd").onclick = addCustomSale;
 $("finishBtn").onclick = finishSale;
 $("rcptDone").onclick = () => $("receiptDlg").close();
 $("tabSales").onclick = () => showTab("sales");
@@ -3450,7 +3494,7 @@ function renderStock() {
   const q = $("stSearch").value.trim().toLowerCase();
   const list = $("stList");
   list.textContent = "";
-  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q)).sort((a, b) => a.name.localeCompare(b.name));
   if (!shown.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "No products found."; list.appendChild(p); }
   for (const it of shown) {
     const card = document.createElement("div"); card.className = "item";
