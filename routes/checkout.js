@@ -12,6 +12,7 @@ module.exports = function checkoutRouter(db, requireOwner) {
         !["cash", "ewallet"].includes(s.method) || !validMoney(s.received) ||
         !Array.isArray(s.lines) || !s.lines.length || s.lines.length > 500 ||
         !s.lines.every(l => l && typeof l.id === "string" && l.id.length > 0 && l.id.length <= 200 &&
+          (l.expiry == null || typeof l.expiry === "string") &&
           Number.isSafeInteger(l.qty) && l.qty > 0 && (!l.custom ||
           (typeof l.name === "string" && l.name.trim().length > 0 && validMoney(l.price))))) {
       return res.status(400).json({ ok: false, error: "Invalid checkout" });
@@ -31,11 +32,13 @@ module.exports = function checkoutRouter(db, requireOwner) {
           const row = db.prepare("SELECT * FROM products WHERE id=?").get(line.id);
           if (!row) return { conflict: "Product is missing: " + line.id };
           const current = updates.get(line.id) || { stock: row.stock, batches: JSON.parse(row.batches_json || "[]") };
+          if (!Array.isArray(current.batches)) return { conflict: "Invalid inventory batches: " + row.name };
           if (current.stock < line.qty) return { conflict: "Insufficient stock: " + row.name };
           const taken = [];
           let remaining = line.qty;
           for (const batch of current.batches) {
             if (remaining <= 0) break;
+            if (line.expiry && batch.date !== line.expiry) continue;
             const available = Math.max(0, Math.floor(Number(batch.qty) || 0));
             const qty = Math.min(available, remaining);
             if (qty) {
@@ -45,13 +48,13 @@ module.exports = function checkoutRouter(db, requireOwner) {
             }
           }
           // Legacy products may have stock without batch allocations.
-          if (remaining && current.batches.length) return { conflict: "Batch stock mismatch: " + row.name };
+          if (remaining && (current.batches.length || line.expiry)) return { conflict: "Batch stock mismatch: " + row.name };
           current.stock -= line.qty;
           updates.set(line.id, current);
           const unitCost = taken.reduce((n, b) => n + b.qty, 0) === line.qty && taken.every(b => validMoney(b.cost))
             ? taken.reduce((sum, b) => sum + b.cost * b.qty, 0) / line.qty : row.cost == null ? null : row.cost / 100;
           lines.push({ id: row.id, name: row.name, barcode: row.barcode, price: row.price / 100,
-            cost: unitCost, qty: line.qty, expiry: null, taken });
+            cost: unitCost, qty: line.qty, expiry: line.expiry || null, taken });
         }
         const total = Math.round(lines.reduce((sum, l) => sum + cents(l.price) * l.qty, 0)) / 100;
         if (cents(s.received) < cents(total)) return { conflict: "Payment is below total" };
