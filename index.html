@@ -1963,7 +1963,7 @@ function validateCheckoutStock() {
 async function finishSale() {
   if (session && session.online && isOwner()) {
     if (!cart.length) return showMsg("Add at least one product before finishing the sale.");
-    const total = Math.round(cart.reduce((sum, l) => sum + Number(l.price) * l.qty, 0) * 100) / 100;
+    const total = Math.round(cart.reduce((sum, l) => { const product = l.custom ? l : items.find(it => String(it.id) === String(l.id)); return sum + Number(product?.price) * l.qty; }, 0) * 100) / 100;
     if (!Number.isFinite(total) || total < 0) return showMsg("Cart total is invalid. Check the product prices before checkout.");
     let received = total, reference = "", payNote = "";
     if (payMethod === "ewallet") {
@@ -1987,8 +1987,8 @@ async function finishSale() {
     }
     if (!window.pendingServerCheckout) window.pendingServerCheckout = {
       id: crypto.randomUUID(), fingerprint, method: payMethod, received, reference, payNote,
-      lines: cart.map(l => ({ id: String(l.id), name: l.name, price: l.price,
-        qty: l.qty, custom: !!l.custom, expiry: l.date || null }))
+      lines: cart.map(l => { const product = l.custom ? l : items.find(it => String(it.id) === String(l.id)); return { id: String(l.id), name: product?.name, price: product?.price,
+        qty: l.qty, custom: !!l.custom, expiry: l.date || null }; })
     };
     const request = window.pendingServerCheckout;
     try { localStorage.setItem("pos_pending_checkout_v1", JSON.stringify(request)); }
