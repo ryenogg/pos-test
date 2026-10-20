@@ -2832,7 +2832,7 @@ function processRefund() {
   const lines = [];
   sale.lines.forEach((l, idx) => {
     const q = rfQty[idx] || 0;
-    if (q > 0) lines.push({ lineIndex: idx, id: l.id || null, name: l.name, barcode: l.barcode, price: l.price, cost: l.cost, qty: q,
+    if (q > 0) lines.push({ lineIndex: idx, id: l.id || null, custom: !!l.custom, name: l.name, barcode: l.barcode, price: l.price, cost: l.cost, qty: q,
                          taken: l.taken || null, prior: refundedQty(sale.no, idx) });
   });
   if (!lines.length) return err("Enter the quantity to refund for at least one product.");
