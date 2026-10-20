@@ -841,7 +841,8 @@ async function syncProductsAfterLogin() {
 async function syncSavedProductToServer(it) {
   if (!session || !session.online) return;
   try {
-    await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) });
+    const result = await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) });
+    if (result.updated_at) it.updated_at = result.updated_at;
   } catch (e) {
     alert("This product was saved on this device, but the server did not accept the update: " + e.message + "\nKeep this browser data. Log in again and use product sync to retry.");
   }
