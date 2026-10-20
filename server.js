@@ -106,6 +106,27 @@ app.use("/api/sales", salesRouter(db, auth.requireOwner));
 app.use("/api/refunds", refundsRouter(db, auth.requireOwner));
 app.use("/api/migrate", migrationRouter(db, auth.requireOwner));
 
+// Read-only shared snapshot for future browser migration and reconciliation.
+// Never auto-import or overwrite device-local data on a GET request.
+app.get("/api/sync/snapshot", auth.requireOwner, (_req, res) => {
+  try {
+    const products = db.prepare("SELECT id, barcode, name, price, cost, stock, batches_json, metadata_json, updated_at FROM products ORDER BY name COLLATE NOCASE").all()
+      .map(r => ({ ...JSON.parse(r.metadata_json || "{}"), id: r.id, barcode: r.barcode,
+        name: r.name, price: r.price / 100, cost: r.cost == null ? null : r.cost / 100,
+        stock: r.stock, batches: JSON.parse(r.batches_json || "[]"), updated_at: r.updated_at }));
+    const sales = db.prepare("SELECT metadata_json FROM sales ORDER BY date,id").all()
+      .map(r => JSON.parse(r.metadata_json));
+    const expenses = db.prepare("SELECT id,date,amount,spread,metadata_json,deleted_at FROM expenses ORDER BY date,id").all()
+      .map(r => ({ ...JSON.parse(r.metadata_json || "{}"), id: r.id, date: r.date,
+        amount: r.amount / 100, spread: r.spread, deletedAt: r.deleted_at }));
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true, products, sales, expenses, serverTime: new Date().toISOString() });
+  } catch (e) {
+    console.error("Sync snapshot failed", e);
+    res.status(500).json({ ok: false, error: "Unable to load shared snapshot" });
+  }
+});
+
 // Serve only the known frontend files. Do not expose server.js, routes, data,
 // package files, or other backend files through a general root-directory static server.
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "index.html")));
