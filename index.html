@@ -1976,8 +1976,11 @@ async function finishSale() {
         return showMsg("The amount received is less than the total.");
     }
     // Preserve the request ID across network retries, so a timeout cannot create a second sale.
+    const fingerprint = JSON.stringify({ cart, payMethod, received, reference, payNote });
+    if (window.pendingServerCheckout && window.pendingServerCheckout.fingerprint !== fingerprint)
+      return showMsg("An earlier checkout may have completed. Retry the original checkout before changing the cart.");
     if (!window.pendingServerCheckout) window.pendingServerCheckout = {
-      id: crypto.randomUUID(), method: payMethod, received, reference, payNote,
+      id: crypto.randomUUID(), fingerprint, method: payMethod, received, reference, payNote,
       lines: cart.map(l => ({ id: String(l.id), name: l.name, price: l.price,
         qty: l.qty, custom: !!l.custom, expiry: l.date || null }))
     };
