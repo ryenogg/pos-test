@@ -48,7 +48,7 @@ module.exports = function checkoutRouter(db, requireOwner) {
           if (remaining && current.batches.length) return { conflict: "Batch stock mismatch: " + row.name };
           current.stock -= line.qty;
           updates.set(line.id, current);
-          const unitCost = taken.length === line.qty && taken.every(b => validMoney(b.cost))
+          const unitCost = taken.reduce((n, b) => n + b.qty, 0) === line.qty && taken.every(b => validMoney(b.cost))
             ? taken.reduce((sum, b) => sum + b.cost * b.qty, 0) / line.qty : row.cost == null ? null : row.cost / 100;
           lines.push({ id: row.id, name: row.name, barcode: row.barcode, price: row.price / 100,
             cost: unitCost, qty: line.qty, expiry: null, taken });
