@@ -1762,6 +1762,26 @@ function saveSales() {
 }
 
 
+/* Import server receipts by stable ID; never upload or discard device-only sales. */
+async function refreshSharedSales() {
+  if (!session || !session.online || !isOwner()) return;
+  try {
+    const remote = (await serverApi("/api/sales")).sales || [];
+    const remoteIds = new Set(remote.map(s => String(s.id)));
+    const localOnly = sales.filter(s => !s.id || !remoteIds.has(String(s.id)));
+    const merged = [...localOnly, ...remote];
+    const previous = sales;
+    sales = merged;
+    if (!saveSales()) {
+      sales = previous;
+      throw new Error("Browser could not cache shared sales");
+    }
+    renderSales();
+  } catch (e) {
+    console.warn("Shared sales refresh failed:", e);
+  }
+}
+
 /* Explicit one-way test upload. Legacy sales have no IDs, so assign and persist
    stable IDs before sending; never rewrite receipt numbers or local sale values. */
 async function uploadLocalSalesToServer() {
@@ -2394,6 +2414,7 @@ async function doOwnerLogin() {
       msg(""); loadCart(); applyRole(); showTab("dashboard");
       void syncProductsAfterLogin();
       void refreshSharedExpenses();
+      void refreshSharedSales();
     } catch (_) { msg("Could not reach the server. Check your connection and try again."); }
     return;
   }
