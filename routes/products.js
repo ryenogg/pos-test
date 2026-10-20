@@ -20,6 +20,9 @@ module.exports = function productsRouter(db, requireOwner) {
     }
     const now = new Date().toISOString();
     try {
+      const current = db.prepare("SELECT updated_at FROM products WHERE id=?").get(p.id.trim());
+      if (current && (!p.expectedUpdatedAt || p.expectedUpdatedAt !== current.updated_at))
+        return res.status(409).json({ ok: false, error: "Product changed on server. Refresh inventory before editing.", updated_at: current.updated_at });
       db.prepare(`INSERT INTO products (id, barcode, name, price, cost, stock, batches_json, metadata_json, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET barcode=excluded.barcode, name=excluded.name, price=excluded.price, cost=excluded.cost, stock=excluded.stock, batches_json=excluded.batches_json, metadata_json=excluded.metadata_json, updated_at=excluded.updated_at`)
