@@ -786,57 +786,40 @@ async function serverApi(path, options = {}) {
 }
 async function syncProductsAfterLogin() {
   if (!session || !session.online) return;
-  const localCount = items.length;
   let remote;
   try { remote = (await serverApi("/api/products")).products || []; }
-  catch (e) { alert("Logged in, but couldn't load server products. Your local products were not changed. " + e.message); return; }
-  const localById = new Map(items.map(it => [String(it.id), it]));
-  const pendingDeletes = pendingProductDeletes();
-  const pendingDeleteSet = new Set(pendingDeletes.map(String));
+  catch (e) { alert("Could not load server products. Local products were not changed: " + e.message); return; }
   const remoteById = new Map(remote.map(it => [String(it.id), it]));
+  const localById = new Map(items.map(it => [String(it.id), it]));
   const localOnly = items.filter(it => !remoteById.has(String(it.id)));
-  const remoteOnly = remote.filter(it => !localById.has(String(it.id)) && !pendingDeleteSet.has(String(it.id)));
-  const shared = items.length - localOnly.length;
-  const summary = "Product sync will safely merge the two lists.\n\n" +
-    "Products on this device: " + localCount + "\nProducts on server: " + remote.length +
-    "\nNew server products to add here: " + remoteOnly.length +
-    "\nLocal-only products to upload: " + localOnly.length +
-    "\nProducts with the same ID (kept local, not overwritten): " + shared +
-    "\nQueued deletes to apply to server: " + pendingDeletes.length +
-    "\n\nNothing on this device will be replaced. Continue?";
-  if (!confirm(summary)) return;
-  const added = [];
-  for (const it of remoteOnly) {
-    const clean = { ...it };
-    delete clean.created_at; delete clean.updated_at;
-    items.push(migrateItem(clean)); added.push(String(clean.id));
-  }
-  if (added.length && !saveItems()) {
-    const addedSet = new Set(added);
-    items = items.filter(it => !addedSet.has(String(it.id)));
-    alert("Product sync stopped: new products could not be saved on this device. No uploads or deletes were attempted.");
-    return;
-  }
-  let uploaded = 0, failed = [];
-  for (const it of localOnly) {
-    try { await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) }); uploaded++; }
-    catch (e) { failed.push(it.name + ": " + e.message); }
-  }
-  let deleted = 0, stillPending = [];
-  for (const id of pendingDeletes) {
-    try { await serverApi("/api/products/" + encodeURIComponent(id), { method: "DELETE" }); deleted++; }
-    catch (e) { stillPending.push(id); failed.push("Delete " + id + ": " + e.message); }
-  }
-  savePendingProductDeletes(stillPending);
+  const changed = items.filter(it => {
+    const server = remoteById.get(String(it.id));
+    return server && (it.stock !== server.stock || it.price !== server.price ||
+      JSON.stringify(it.batches || []) !== JSON.stringify(server.batches || []) ||
+      it.name !== server.name);
+  });
+  const pendingDeletes = pendingProductDeletes();
+  const message = "Shared server product sync\\n\\n" +
+    "Server products: " + remote.length + "\\n" +
+    "Products differing on this device: " + changed.length + "\\n" +
+    "Local-only products preserved: " + localOnly.length + "\\n" +
+    "Pending local deletes (not applied): " + pendingDeletes.length + "\\n\\n" +
+    "The server copy will replace matching products on this device, including stock and prices. " +
+    "A full local product backup will be saved in this browser first. " +
+    "Any unsynced edits can be recovered from that backup. Continue?";
+  if (!confirm(message)) return;
+  const backupKey = "pos_products_before_server_sync_" + new Date().toISOString();
+  try { localStorage.setItem(backupKey, JSON.stringify(items)); }
+  catch (e) { alert("Product sync stopped: browser backup failed. No products were changed."); return; }
+  const next = [...localOnly, ...remote.map(it => migrateItem({ ...it }))];
+  const previous = items;
+  items = next;
+  if (!saveItems()) { items = previous; alert("Product sync stopped: could not save updated products."); return; }
   render();
   if (!$("alertsView").hidden) renderAlerts();
-
-  alert("Product sync finished.\nAdded from server to this device: " + added.length +
-    "\nUploaded local-only products: " + uploaded +
-    "\nServer deletes completed: " + deleted +
-    "\nSame-ID products kept local without overwriting server: " + shared +
-    (failed.length ? "\n\nSome items need attention:\n" + failed.slice(0, 8).join("\n") : "") +
-    (failed.length > 8 ? "\n…and " + (failed.length - 8) + " more." : ""));
+  alert("Products refreshed from the server. " + changed.length + " differing products updated. " +
+    localOnly.length + " local-only products preserved. Backup key: " + backupKey +
+    ". Local-only products and pending deletes were not uploaded.");
 }
 async function syncSavedProductToServer(it) {
   if (!session || !session.online) return;
