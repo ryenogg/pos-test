@@ -776,7 +776,7 @@ function savePendingProductDeletes(ids) {
 }
 function serverProductPayload(it) {
   return { id: String(it.id), barcode: it.barcode || null, name: it.name, price: Number(it.price), cost: typeof it.cost === "number" ? it.cost : null,
-    stock: Math.max(0, Math.floor(Number(it.stock) || 0)), batches: Array.isArray(it.batches) ? it.batches : [], metadata: it };
+    stock: Math.max(0, Math.floor(Number(it.stock) || 0)), batches: Array.isArray(it.batches) ? it.batches : [], metadata: it, expectedUpdatedAt: it.updated_at || null };
 }
 async function serverApi(path, options = {}) {
   const r = await fetch(path, { credentials: "same-origin", ...options, headers: { ...(options.headers || {}) } });
