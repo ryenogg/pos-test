@@ -8,6 +8,7 @@ const authRouter = require("./routes/auth");
 const expensesRouter = require("./routes/expenses");
 const salesRouter = require("./routes/sales");
 const refundsRouter = require("./routes/refunds");
+const checkoutRouter = require("./routes/checkout");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -104,6 +105,7 @@ app.use("/api/products", productsRouter(db, auth.requireOwner));
 app.use("/api/expenses", expensesRouter(db, auth.requireOwner));
 app.use("/api/sales", salesRouter(db, auth.requireOwner));
 app.use("/api/refunds", refundsRouter(db, auth.requireOwner));
+app.use("/api/checkout", checkoutRouter(db, auth.requireOwner));
 app.use("/api/migrate", migrationRouter(db, auth.requireOwner));
 
 // Read-only shared snapshot for future browser migration and reconciliation.
