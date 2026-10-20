@@ -952,7 +952,7 @@ function render() {
 
   const sorter = SORTERS[$("sortSel").value] || byName;
   const shown = items
-    .filter(i => i.name.toLowerCase().includes(q) || i.barcode.includes(q))
+    .filter(i => i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q))
     .filter(i => cf === "" || (cf === "none" ? !catName(i) : i.categoryId === cf))
     .sort(sorter);
 
@@ -1574,7 +1574,7 @@ function renderBrowse() {
   const q = $("browseSearch").value.trim().toLowerCase();
   const list = $("browseList");
   list.textContent = "";
-  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q)).sort(byName).slice(0, 40);
+  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q)).sort(byName).slice(0, 40);
   if (!shown.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = items.length ? "No products match your search." : "No products yet."; list.appendChild(p); }
   for (const it of shown) {
     const row = document.createElement("button"); row.className = "srow";
@@ -3450,7 +3450,7 @@ function renderStock() {
   const q = $("stSearch").value.trim().toLowerCase();
   const list = $("stList");
   list.textContent = "";
-  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || i.barcode.includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q)).sort((a, b) => a.name.localeCompare(b.name));
   if (!shown.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = "No products found."; list.appendChild(p); }
   for (const it of shown) {
     const card = document.createElement("div"); card.className = "item";
