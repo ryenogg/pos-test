@@ -2202,14 +2202,26 @@ function expenseInRange(start, end) {
   return total;
 }
 
-function addExpense() {
+async function addExpense() {
   const date = $("xDate").value, amount = parseFloat($("xAmt").value);
   const err = (t) => { $("xErr").textContent = t; };
   if (!date) return err("Pick a date.");
   if (isNaN(amount) || amount <= 0) return err("Enter an amount greater than 0.");
-  expenses.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date,
-                  category: $("xCat").value, note: $("xNote").value.trim(), amount: r2(amount), spread: $("xSpread").value });
-  if (!saveExpenses()) { expenses.pop(); return err("Couldn't save. Your browser may be blocking storage."); }
+  const expense = { id: crypto.randomUUID(), date, category: $("xCat").value,
+    note: $("xNote").value.trim(), amount: r2(amount), spread: $("xSpread").value };
+  if (session && session.online && isOwner()) {
+    try {
+      await serverApi("/api/expenses", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
+    } catch (e) { return err("Expense was not saved: " + e.message); }
+  }
+  expenses.push(expense);
+  if (!saveExpenses()) {
+    if (!(session && session.online && isOwner())) {
+      expenses.pop(); return err("Couldn't save. Your browser may be blocking storage.");
+    }
+    err("Saved on server, but browser storage failed. Reload to retrieve it.");
+  }
   $("xAmt").value = ""; $("xNote").value = ""; err("");
   renderExpenses();
 }
@@ -2236,7 +2248,14 @@ function renderExpenses() {
     right.style.cssText = "display:flex;gap:8px;align-items:center";
     const amt = document.createElement("strong"); amt.textContent = money(x.amount);
     const del = button("Delete", () => askConfirm("Delete this " + x.category.toLowerCase() + " expense of " + money(x.amount) + "?", "Delete", () => {
-      expenses = expenses.filter(e => e.id !== x.id); saveExpenses(); renderExpenses();
+      void (async () => {
+        if (session && session.online && isOwner()) {
+          try {
+            await serverApi("/api/expenses/" + encodeURIComponent(x.id), { method: "DELETE" });
+          } catch (e) { alert("Expense not deleted: " + e.message); return; }
+        }
+        expenses = expenses.filter(e => e.id !== x.id); saveExpenses(); renderExpenses();
+      })();
     }));
     del.className = "danger"; del.style.padding = "4px 10px";
     right.append(amt, del);
