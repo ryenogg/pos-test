@@ -1964,6 +1964,7 @@ async function finishSale() {
   if (session && session.online && isOwner()) {
     if (!cart.length) return showMsg("Add at least one product before finishing the sale.");
     const total = Math.round(cart.reduce((sum, l) => sum + Number(l.price) * l.qty, 0) * 100) / 100;
+    if (!Number.isFinite(total) || total < 0) return showMsg("Cart total is invalid. Check the product prices before checkout.");
     let received = total, reference = "", payNote = "";
     if (payMethod === "ewallet") {
       if (!canEwallet()) return showMsg("E-wallet payments are not allowed for your profile.");
@@ -1973,6 +1974,7 @@ async function finishSale() {
     } else {
       const entered = parseFloat($("received").value);
       if (Number.isFinite(entered)) received = entered;
+      if (!Number.isFinite(received)) return showMsg("Enter a valid payment amount.");
       if (Math.round(received * 100) < Math.round(total * 100))
         return showMsg("The amount received is less than the total.");
     }
