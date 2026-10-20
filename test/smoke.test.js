@@ -145,6 +145,36 @@ test("backend smoke test: owner auth and product CRUD", async (t) => {
   assert.equal(listExpenses.expenses.length, 1);
   assert.equal(listExpenses.expenses[0].amount, 18.75);
   assert.equal(listExpenses.expenses[0].category, "Supplies");
+  // Full-backup migration: preserve relationships and drawer payouts, including retries.
+  const backup = {
+    items: [{ id: "migration-product", barcode: "MIG-01", name: "Migrated Item", price: 8, stock: 2, batches: [] }],
+    sales: [{ no: 50, date: "2026-10-18T11:00:00.000Z", total: 8, received: 8, change: 0,
+      method: "cash", shiftId: "migration-shift", lines: [{ id: "migration-product", name: "Migrated Item", price: 8, qty: 1 }] }],
+    expenses: [{ id: "migration-expense", date: "2026-10-18", amount: 3, category: "Delivery", note: "Courier", spread: "once" }],
+    shifts: [{ id: "migration-shift", cashier: "Owner", openedAt: "2026-10-18T09:00:00.000Z", float: 100,
+      payouts: [{ id: "migration-payout", amount: 3, note: "Courier", time: "2026-10-18T12:00:00.000Z" }] }],
+    cashiers: [],
+    refunds: [{ id: "migration-refund", saleNo: 50, date: "2026-10-18T13:00:00.000Z", amount: 8, reason: "Damaged", by: "Owner" }]
+  };
+  const migrate = (payload) => fetch(base + "/api/migrate", { method: "POST", headers: saleHeaders, body: JSON.stringify(payload) });
+  assert.equal((await migrate(backup)).status, 200, "migration should import complete backup");
+  assert.equal((await migrate(backup)).status, 200, "migration retry should be idempotent");
+  const migratedSales = await (await fetch(base + "/api/sales", { headers: { Cookie: cookie } })).json();
+  assert.equal(migratedSales.sales.find(s => s.no === 50).id, "legacy-sale-50");
+  const migratedExpenses = await (await fetch(base + "/api/expenses", { headers: { Cookie: cookie } })).json();
+  assert.equal(migratedExpenses.expenses.find(e => e.id === "migration-expense").note, "Courier");
+  const sqlite = require("better-sqlite3");
+  const checkDb = new sqlite(dbPath, { readonly: true });
+  assert.equal(checkDb.prepare("SELECT sale_id FROM refunds WHERE id='migration-refund'").get().sale_id, "legacy-sale-50");
+  assert.equal(checkDb.prepare("SELECT COUNT(*) AS n FROM cash_movements WHERE id='migration-payout'").get().n, 1);
+  assert.equal(checkDb.prepare("SELECT description FROM expenses WHERE id='migration-expense'").get().description, "Courier");
+  checkDb.close();
+  const broken = { ...backup, refunds: [{ ...backup.refunds[0], id: "orphan-refund", saleNo: 9999 }] };
+  assert.equal((await migrate(broken)).status, 400, "orphan refund must roll back migration");
+  const afterRollback = new sqlite(dbPath, { readonly: true });
+  assert.equal(afterRollback.prepare("SELECT COUNT(*) AS n FROM refunds WHERE id='orphan-refund'").get().n, 0);
+  afterRollback.close();
+
   const deleteExpense = await fetch(base + "/api/expenses/expense-test-1", { method: "DELETE", headers: { Cookie: cookie } });
   assert.equal(deleteExpense.status, 200);
   const afterDelete = await (await fetch(base + "/api/expenses", { headers: { Cookie: cookie } })).json();

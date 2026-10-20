@@ -745,8 +745,13 @@ function loadItems() {
   catch (e) { return []; }    // storage empty or blocked: start with an empty list
 }
 function saveItems() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
-  catch (e) { alert("Could not save. Your browser may be blocking storage."); }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    return true;
+  } catch (e) {
+    alert("Could not save. Your browser may be blocking storage.");
+    return false;
+  }
 }
 
 const PENDING_PRODUCT_DELETES_KEY = "pos_pending_product_deletes_v1";
@@ -795,7 +800,12 @@ async function syncProductsAfterLogin() {
     delete clean.created_at; delete clean.updated_at;
     items.push(migrateItem(clean)); added.push(String(clean.id));
   }
-  if (added.length) saveItems();
+  if (added.length && !saveItems()) {
+    const addedSet = new Set(added);
+    items = items.filter(it => !addedSet.has(String(it.id)));
+    alert("Product sync stopped: new products could not be saved on this device. No uploads or deletes were attempted.");
+    return;
+  }
   let uploaded = 0, failed = [];
   for (const it of localOnly) {
     try { await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) }); uploaded++; }
@@ -1378,8 +1388,9 @@ function submitForm() {
                    supplierPrices: formRecords.map(({ isNew, ...r }) => r),
                    costSource: formRecords.some(r => r.id === formCostSource) ? formCostSource : null };
   const when = new Date().toISOString();
+  const beforeProducts = JSON.stringify(items);
   const old = editingId ? items.find(i => i.id === editingId) : null;
-  const history = old ? (old.priceHistory || []) : [];
+  const history = old ? [...(old.priceHistory || [])] : [];
   if (!old || toCents(old.price) !== toCents(price)) {       // every change of the selling price is written down
     history.push({ id: uid(), date: when, prev: old ? old.price : null, price, markup: markup ?? null, mode, by: whoName(), reason: $("fReason").value.trim() });
   }
@@ -1387,7 +1398,10 @@ function submitForm() {
 
   if (old) Object.assign(old, fields);
   else items.push({ id: uid(), createdAt: Date.now(), ...fields });
-  saveItems();
+  if (!saveItems()) {
+    items = JSON.parse(beforeProducts);
+    return fail("Product could not be saved. Your previous inventory is unchanged.");
+  }
   const savedItem = items.find(i => i.id === (old ? old.id : fields.id));
   const syncItem = old || items[items.length - 1];
   if (syncItem) void syncSavedProductToServer(syncItem);
@@ -1830,7 +1844,93 @@ function takeStock(it, qty, date) {
   it.stock = it.batches.reduce((sum, b) => sum + b.qty, 0);
 }
 
+function planCheckoutStock() {
+  const remaining = new Map();
+  const allocations = new Array(cart.length);
+
+  // Reserve cashier-selected expiration dates before automatic allocations.
+  const order = [
+    ...cart.map((_, i) => i).filter(i => !!cart[i].date),
+    ...cart.map((_, i) => i).filter(i => !cart[i].date)
+  ];
+
+  for (const i of order) {
+    const line = cart[i];
+    const item = items.find(it => it.id === line.id);
+
+    if (!item) return { error: "A product in the cart no longer exists." };
+    if (!Number.isInteger(line.qty) || line.qty < 1)
+      return { error: "Invalid quantity for " + item.name + "." };
+
+    if (!remaining.has(item.id)) {
+      remaining.set(item.id, {
+        total: item.stock,
+        batches: (item.batches || []).map(b => ({ ...b }))
+      });
+    }
+
+    const stock = remaining.get(item.id);
+    if (stock.total < line.qty)
+      return { error: "Not enough stock for " + item.name + "." };
+
+    const batches = stock.batches;
+    const taken = [];
+
+    if (!batches.length) {
+      if (line.date)
+        return { error: "No matching expiration batch for " + item.name + "." };
+      taken.push({
+        date: null,
+        qty: line.qty,
+        cost: typeof item.cost === "number" ? item.cost : null
+      });
+    } else {
+      const candidates = batches
+        .filter(b => !line.date || (b.date || "none") === line.date)
+        .sort((a, b) => dateOrder(a.date).localeCompare(dateOrder(b.date)));
+
+      let needed = line.qty;
+
+      for (const batch of candidates) {
+        if (needed <= 0) break;
+        const used = Math.min(Math.max(0, batch.qty), needed);
+        if (used <= 0) continue;
+
+        taken.push({
+          date: batch.date,
+          qty: used,
+          cost: typeof batch.cost === "number"
+            ? batch.cost
+            : (typeof item.cost === "number" ? item.cost : null)
+        });
+
+        batch.qty -= used;
+        needed -= used;
+      }
+
+      if (needed > 0)
+        return { error: "Not enough stock for " + item.name +
+          (line.date ? " with the selected expiration date." : ".") };
+    }
+
+    stock.total -= line.qty;
+    allocations[i] = taken;
+  }
+
+  return { allocations, remaining };
+}
+
+function validateCheckoutStock() {
+  return planCheckoutStock().error || null;
+}
+
 function finishSale() {
+  const stockError = validateCheckoutStock();
+  if (stockError) {
+    showMsg(stockError);
+    return;
+  }
+
   if (cart.length === 0) { showMsg("Add at least one product before finishing the sale."); return; }
   if (!isOwner() && !(activeShift() && activeShift().id === session.shiftId)) {
     showMsg("Your shift is not open. Log out and start a new shift."); return;
@@ -1838,11 +1938,12 @@ function finishSale() {
 
   // Copy name, barcode and price into the sale, so old receipts stay correct even if prices change later
   // Two lines of the same product share one working copy of its batches, so the same stock is never counted twice
-  const sim = {};
-  const lines = cart.map(l => {
-    const it = items.find(i => i.id === l.id);
-    const copy = sim[it.id] || (sim[it.id] = (it.batches || []).map(b => ({ ...b })));
-    const taken = planTake(it, l.qty, l.date, copy, true);       // which dates these units really came from
+  const checkoutPlan = planCheckoutStock();
+  if (checkoutPlan.error) { showMsg(checkoutPlan.error); return; }
+
+  const lines = cart.map((l, i) => {
+    const it = items.find(item => item.id === l.id);
+    const taken = checkoutPlan.allocations[i];
     const cogs = takenCost(taken);                                 // what they cost us
     return { id: it.id, name: it.name, barcode: it.barcode, price: it.price, cost: cogs === null ? null : cogs / l.qty, qty: l.qty,
              expiry: l.date || null, taken };
@@ -1869,11 +1970,36 @@ function finishSale() {
                  shiftId: currentShiftId(),                                              // the cash drawer shift this sale belongs to
                  cashierId: isOwner() ? null : session.cashierId, cashier: whoName() };  // who made the sale
 
-  sales.push(sale);
-  if (!saveSales()) { sales.pop(); showMsg("Couldn't save the sale. Nothing was changed."); return; }
+  // Keep the original inventory for recovery if checkout saving fails.
+  const originalItems = JSON.stringify(items);
 
-  for (const l of cart) takeStock(items.find(i => i.id === l.id), l.qty, l.date);   // reduce stock
-  saveItems();
+  // Apply the exact batch allocations recorded in the sale.
+  for (const [id, stock] of checkoutPlan.remaining) {
+    const item = items.find(it => it.id === id);
+    item.batches = stock.batches;
+    item.stock = stock.batches.length
+      ? item.batches.reduce((sum, b) => sum + b.qty, 0)
+      : stock.total;
+  }
+
+  if (!saveItems()) {
+    items = JSON.parse(originalItems);
+    showMsg("Checkout stopped: inventory could not be saved. No sale was recorded.");
+    return;
+  }
+
+  sales.push(sale);
+  if (!saveSales()) {
+    sales.pop();
+    items = JSON.parse(originalItems);
+
+    if (!saveItems()) {
+      showMsg("URGENT: Sale saving failed and inventory could not be restored. Stop checkout and check stock.");
+    } else {
+      showMsg("Checkout stopped: sale could not be saved. Inventory was restored.");
+    }
+    return;
+  }
   cart = [];
   showMsg("");
   $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = ""; setPayMethod("cash");
@@ -2394,8 +2520,13 @@ function addPayout() {
   const sh = activeShift(); if (!sh) return;
   const amount = parseFloat($("dPayAmt").value);
   if (isNaN(amount) || amount <= 0) { $("dPayErr").textContent = "Enter an amount greater than 0."; return; }
-  sh.payouts.push({ id: uid(), time: new Date().toISOString(), amount: r2(amount), note: $("dPayNote").value.trim(), by: whoName() });
-  saveShifts();
+  const payout = { id: uid(), time: new Date().toISOString(), amount: r2(amount), note: $("dPayNote").value.trim(), by: whoName() };
+  sh.payouts.push(payout);
+  if (!saveShifts()) {
+    sh.payouts.pop();
+    $("dPayErr").textContent = "Payout was not saved. Please try again.";
+    return;
+  }
   $("dPayAmt").value = ""; $("dPayNote").value = "";
   renderDrawer();
 }
@@ -2409,11 +2540,16 @@ function closeShift() {
   askConfirm(isOwner() ? "Close this shift? Expected " + money(f.expected) + ", counted " + money(r2(actual)) + "."
                        : (cart.length ? "The cart still has products, and they will be discarded. " : "") + "Close your shift with " + money(r2(actual)) + " counted?", "Yes", () => {
     // Save the final numbers with the shift, so the history stays the same later
+    const previousShift = { ...sh };
     Object.assign(sh, { closedAt: new Date().toISOString(), saleCount: f.count, cashCount: f.cashCount, cashSales: f.cashSales,
                         ewCount: f.ewCount, ewSales: f.ewSales, cashRefunds: f.cashRefunds, refundCount: f.refundCount,
                         payoutTotal: f.payouts, expected: f.expected, actual: r2(actual), difference: r2(actual - f.expected),
                         closeNote: $("dCloseNote").value.trim(), closedBy: whoName() });
-    saveShifts();
+    if (!saveShifts()) {
+      Object.assign(sh, previousShift);
+      $("dCloseErr").textContent = "Shift could not be saved. It is still open; please try again.";
+      return;
+    }
     justClosedId = sh.id;
     $("dActual").value = ""; $("dCloseNote").value = "";
     if (!isOwner()) { cart = []; saveCart(); logout("Shift closed. Your cash count of " + money(r2(actual)) + " was recorded. Thank you!"); return; }
@@ -2452,7 +2588,13 @@ function renderDrawer() {
       const right = document.createElement("span"); right.style.cssText = "display:flex;gap:8px;align-items:center";
       const amt = document.createElement("strong"); amt.textContent = money(pay.amount);
       const del = button("Remove", () => askConfirm("Remove this " + money(pay.amount) + " payout?", "Remove", () => {
-        sh.payouts = sh.payouts.filter(x => x.id !== pay.id); saveShifts(); renderDrawer();
+        const oldPayouts = sh.payouts;
+        sh.payouts = sh.payouts.filter(x => x.id !== pay.id);
+        if (!saveShifts()) {
+          sh.payouts = oldPayouts;
+          alert("Payout removal could not be saved. Nothing was removed.");
+        }
+        renderDrawer();
       }));
       del.className = "danger"; del.style.padding = "4px 10px";
       right.append(amt, del);
@@ -2671,10 +2813,26 @@ function processRefund() {
     const rf = { id: uid(), no, date: new Date().toISOString(), saleNo: sale.no, method: ewallet ? "ewallet" : "cash", reference,
                  reason, note: $("rfNote").value.trim(), restock, lines, amount, shiftId: currentShiftId(),
                  cashierId: isOwner() ? null : session.cashierId, by: whoName() };
-    refunds.push(rf);
-    if (!saveRefunds()) { refunds.pop(); return err("Couldn't save the refund. Nothing was changed."); }
+    // Save restocked inventory first. If the refund cannot be saved, restore the old inventory.
+    const beforeItems = JSON.stringify(items);
     let missing = 0;
-    if (restock) { for (const l of lines) if (!returnToStock(l)) missing++; saveItems(); render(); }
+    if (restock) {
+      for (const l of lines) if (!returnToStock(l)) missing++;
+      if (!saveItems()) {
+        items = JSON.parse(beforeItems);
+        return err("Refund stopped: restocked inventory could not be saved. No refund recorded.");
+      }
+    }
+    refunds.push(rf);
+    if (!saveRefunds()) {
+      refunds.pop();
+      if (restock) {
+        items = JSON.parse(beforeItems);
+        if (!saveItems()) return err("URGENT: Refund was not saved and stock rollback failed. Stop and check inventory.");
+      }
+      return err("Refund could not be saved. Inventory was restored; no refund recorded.");
+    }
+    if (restock) render();
     refundSale = null;
     $("rfSearch").value = "";
     renderRefunds();
@@ -2959,16 +3117,38 @@ function restoreBackup() {
                           typeof i.price === "number" && typeof i.stock === "number") &&
     data.sales.every(x => x && typeof x.no === "number" && typeof x.total === "number" && Array.isArray(x.lines));
   if (!ok) { $("backupMsg").textContent = "That doesn't look like a backup from this app. Nothing was changed."; return; }
-  askConfirm("Replace all current products and sales with this backup?", "Yes", () => {
-    items = data.items.map(migrateItem); sales = data.sales;
-    expenses = Array.isArray(data.expenses) ? data.expenses : []; saveExpenses();
-    shifts = Array.isArray(data.shifts) ? data.shifts.map(sh => { delete sh.selfie; return sh; }) : []; saveShifts();
-    cashiers = Array.isArray(data.cashiers) ? data.cashiers : cashiers; saveCashiers();
-    refunds = Array.isArray(data.refunds) ? data.refunds : []; saveRefunds();
-    adjustments = Array.isArray(data.adjustments) ? data.adjustments : []; saveAdjustments();
-    categories = Array.isArray(data.categories) ? data.categories : []; saveCategories();
-    suppliers = Array.isArray(data.suppliers) ? data.suppliers : []; saveSuppliers();
-    saveItems(); saveSales();
+  askConfirm("Replace ALL local POS data (products, sales, expenses, shifts, staff, refunds, adjustments, categories and suppliers)? Make a backup first.", "Restore", () => {
+    const next = {
+      [STORAGE_KEY]: data.items.map(it => migrateItem({ ...it })),
+      [SALES_KEY]: data.sales,
+      [EXPENSES_KEY]: Array.isArray(data.expenses) ? data.expenses : [],
+      [SHIFTS_KEY]: Array.isArray(data.shifts) ? data.shifts.map(sh => { const copy = { ...sh }; delete copy.selfie; return copy; }) : [],
+      [REFUNDS_KEY]: Array.isArray(data.refunds) ? data.refunds : [],
+      [ADJ_KEY]: Array.isArray(data.adjustments) ? data.adjustments : [],
+      [CATS_KEY]: Array.isArray(data.categories) ? data.categories : [],
+      [SUPS_KEY]: Array.isArray(data.suppliers) ? data.suppliers : []
+    };
+    // Do not replace cashier records if an older backup omitted them.
+    if (Array.isArray(data.cashiers)) next[CASHIERS_KEY] = data.cashiers;
+    const old = {};
+    try {
+      for (const key of Object.keys(next)) old[key] = localStorage.getItem(key);
+      for (const [key, value] of Object.entries(next)) localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      let rollbackFailed = false;
+      for (const [key, value] of Object.entries(old)) {
+        try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+        catch (_) { rollbackFailed = true; }
+      }
+      $("backupMsg").textContent = rollbackFailed
+        ? "URGENT: Restore failed and rollback also failed. Do not continue until data is checked."
+        : "Restore failed; previous browser data was restored. No changes loaded.";
+      return;
+    }
+    items = next[STORAGE_KEY]; sales = next[SALES_KEY]; expenses = next[EXPENSES_KEY];
+    shifts = next[SHIFTS_KEY]; refunds = next[REFUNDS_KEY]; adjustments = next[ADJ_KEY];
+    categories = next[CATS_KEY]; suppliers = next[SUPS_KEY];
+    if (Array.isArray(data.cashiers)) cashiers = data.cashiers;
     cart = [];
     render(); renderSales(); renderCart();
     $("backupDlg").close();
@@ -3333,6 +3513,7 @@ function saveStockCheck() {
   const net = r2(changes.reduce((t, c) => t + (c.counted - c.expected) * unitCostOf(c.it, c.b), 0));
   askConfirm(changes.length + (changes.length === 1 ? " difference" : " differences") + " found. The value of your stock changes by " + money(net) + ". Save?", "Save", () => {
     const note = $("stNote").value.trim();
+    const oldItems = JSON.stringify(items), oldAdjustments = JSON.stringify(adjustments);
     for (const c of changes) {
       logAdjustment(c.it, c.b ? c.b.date : null, "count", c.expected, c.counted, unitCostOf(c.it, c.b), note);
       if (c.b) c.b.qty = c.counted; else c.it.stock = c.counted;
@@ -3341,7 +3522,15 @@ function saveStockCheck() {
       it.batches = it.batches.filter(b => b.qty > 0);
       it.stock = it.batches.reduce((t, b) => t + b.qty, 0);
     }
-    saveItems(); saveAdjustments();
+    if (!saveItems()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      return msg("Stock check not saved. Inventory remains unchanged.");
+    }
+    if (!saveAdjustments()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      if (!saveItems()) return msg("URGENT: Stock adjustment history failed and inventory rollback failed. Stop and verify stock.");
+      return msg("Stock check history could not be saved. Inventory was restored.");
+    }
     stockCounts = {}; $("stNote").value = "";
     render(); renderStock();
     msg("Saved " + changes.length + (changes.length === 1 ? " change." : " changes."));
@@ -3352,10 +3541,20 @@ function saveStockCheck() {
 function discardBatch(it, b) {
   const cost = unitCostOf(it, b), value = r2(b.qty * cost);
   askConfirm("Discard ×" + b.qty + " of " + it.name + " (expired " + niceDate(b.date) + ")? It is removed from stock and counted as a loss of " + money(value) + ".", "Discard", () => {
+    const oldItems = JSON.stringify(items), oldAdjustments = JSON.stringify(adjustments);
     logAdjustment(it, b.date, "discard", b.qty, 0, cost, "Expired and discarded");
     it.batches = it.batches.filter(x => x !== b);
     it.stock = it.batches.reduce((t, x) => t + x.qty, 0);
-    saveItems(); saveAdjustments();
+    if (!saveItems()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      alert("Discard not saved. Inventory remains unchanged."); return;
+    }
+    if (!saveAdjustments()) {
+      items = JSON.parse(oldItems); adjustments = JSON.parse(oldAdjustments);
+      if (!saveItems()) alert("URGENT: Discard history failed and inventory rollback failed. Verify stock.");
+      else alert("Discard history could not be saved. Inventory was restored.");
+      return;
+    }
     render(); renderAlerts();
   });
 }
