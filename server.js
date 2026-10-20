@@ -7,6 +7,7 @@ const migrationRouter = require("./routes/migration");
 const authRouter = require("./routes/auth");
 const expensesRouter = require("./routes/expenses");
 const salesRouter = require("./routes/sales");
+const refundsRouter = require("./routes/refunds");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -102,6 +103,7 @@ app.use("/api/auth", auth);
 app.use("/api/products", productsRouter(db, auth.requireOwner));
 app.use("/api/expenses", expensesRouter(db, auth.requireOwner));
 app.use("/api/sales", salesRouter(db, auth.requireOwner));
+app.use("/api/refunds", refundsRouter(db, auth.requireOwner));
 app.use("/api/migrate", migrationRouter(db, auth.requireOwner));
 
 // Serve only the known frontend files. Do not expose server.js, routes, data,
