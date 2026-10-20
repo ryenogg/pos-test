@@ -842,7 +842,7 @@ async function syncSavedProductToServer(it) {
   if (!session || !session.online) return;
   try {
     const result = await serverApi("/api/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(serverProductPayload(it)) });
-    if (result.updated_at) it.updated_at = result.updated_at;
+    if (result.updated_at) { it.updated_at = result.updated_at; if (!saveItems()) alert("Product saved on server, but this device could not cache its version."); }
   } catch (e) {
     alert("This product was saved on this device, but the server did not accept the update: " + e.message + "\nKeep this browser data. Log in again and use product sync to retry.");
   }
@@ -2007,8 +2007,9 @@ async function finishSale() {
       setPayMethod("cash"); setPanelOpen(false); renderCart();
       try {
         const remote = (await serverApi("/api/products")).products || [];
-        items = remote.map(it => migrateItem({ ...it }));
-        saveItems();
+        const remoteIds = new Set(remote.map(it => String(it.id)));
+        items = [...items.filter(it => !remoteIds.has(String(it.id))), ...remote.map(it => migrateItem({ ...it }))];
+        if (!saveItems()) showMsg("Sale saved on server, but refreshed products could not be cached on this device.");
       } catch (_) { showMsg("Sale saved on server. Refresh product stock after reconnecting."); }
       render();
       showReceipt(sale);
