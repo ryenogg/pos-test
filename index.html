@@ -2855,7 +2855,7 @@ function processRefund() {
     const beforeItems = JSON.stringify(items);
     let missing = 0;
     if (restock) {
-      for (const l of lines) if (!returnToStock(l)) missing++;
+      for (const l of lines) if (!l.custom && !returnToStock(l)) missing++;
       if (!saveItems()) {
         items = JSON.parse(beforeItems);
         return err("Refund stopped: restocked inventory could not be saved. No refund recorded.");
