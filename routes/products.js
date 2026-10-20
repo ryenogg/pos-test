@@ -35,7 +35,12 @@ module.exports = function productsRouter(db, requireOwner) {
   });
   router.delete("/:id", requireOwner, (req, res) => {
     if (!req.params.id || req.params.id.length > 200) return res.status(400).json({ ok: false, error: "Invalid product id" });
-    try { const result = db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id); res.json({ ok: true, deleted: result.changes > 0 }); }
+    try {
+      const result = db.prepare("DELETE FROM products WHERE id = ? AND NOT EXISTS (SELECT 1 FROM sale_items WHERE product_id = ?)").run(req.params.id, req.params.id);
+      if (!result.changes && db.prepare("SELECT 1 FROM products WHERE id=?").get(req.params.id))
+        return res.status(409).json({ ok: false, error: "Product has sale history and cannot be deleted" });
+      res.json({ ok: true, deleted: result.changes > 0 });
+    }
     catch (e) { console.error("DELETE product failed", e); res.status(500).json({ ok: false, error: "Unable to delete product" }); }
   });
   return router;
