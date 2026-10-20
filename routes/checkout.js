@@ -61,8 +61,12 @@ module.exports = function checkoutRouter(db, requireOwner) {
           method: s.method, reference: s.reference || "", payNote: s.payNote || "",
           shiftId: null, cashierId: null, cashier: "Owner" };
         for (const [id, update] of updates) {
-          db.prepare("UPDATE products SET stock=?, batches_json=?, updated_at=? WHERE id=?")
-            .run(update.stock, JSON.stringify(update.batches), sale.date, id);
+          const row = db.prepare("SELECT metadata_json FROM products WHERE id=?").get(id);
+          const metadata = JSON.parse(row.metadata_json || "{}");
+          metadata.stock = update.stock;
+          metadata.batches = update.batches;
+          db.prepare("UPDATE products SET stock=?, batches_json=?, metadata_json=?, updated_at=? WHERE id=?")
+            .run(update.stock, JSON.stringify(update.batches), JSON.stringify(metadata), sale.date, id);
         }
         db.prepare(`INSERT INTO sales (id,receipt_no,date,total,received,change_amount,method,reference,pay_note,shift_id,cashier_id,cashier_name,created_at,metadata_json)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(sale.id, no, sale.date, cents(total),
