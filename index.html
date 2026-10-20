@@ -1979,12 +1979,17 @@ async function finishSale() {
     const fingerprint = JSON.stringify({ cart, payMethod, received, reference, payNote });
     if (window.pendingServerCheckout && window.pendingServerCheckout.fingerprint !== fingerprint)
       return showMsg("An earlier checkout may have completed. Retry the original checkout before changing the cart.");
+    if (!window.pendingServerCheckout) {
+      try { window.pendingServerCheckout = JSON.parse(localStorage.getItem("pos_pending_checkout_v1") || "null"); } catch (_) {}
+    }
     if (!window.pendingServerCheckout) window.pendingServerCheckout = {
       id: crypto.randomUUID(), fingerprint, method: payMethod, received, reference, payNote,
       lines: cart.map(l => ({ id: String(l.id), name: l.name, price: l.price,
         qty: l.qty, custom: !!l.custom, expiry: l.date || null }))
     };
     const request = window.pendingServerCheckout;
+    try { localStorage.setItem("pos_pending_checkout_v1", JSON.stringify(request)); }
+    catch (_) { return showMsg("Checkout stopped: browser could not preserve the pending request."); }
     try {
       const result = await serverApi("/api/checkout", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -1994,6 +1999,7 @@ async function finishSale() {
       // Keep a local receipt copy, but the server is authoritative.
       if (!sales.some(s => s.id === sale.id)) { sales.push(sale); saveSales(); }
       window.pendingServerCheckout = null;
+      localStorage.removeItem("pos_pending_checkout_v1");
       cart = [];
       saveCart();
       $("received").value = ""; $("ewRef").value = ""; $("ewNote").value = "";
