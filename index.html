@@ -2155,6 +2155,21 @@ function saveExpenses() {
 }
 
 
+// Import server expenses without discarding unsynced records from this browser.
+async function refreshSharedExpenses() {
+  if (!session || !session.online || !isOwner()) return;
+  try {
+    const remote = (await serverApi("/api/expenses")).expenses || [];
+    const remoteIds = new Set(remote.map(x => String(x.id)));
+    const localOnly = expenses.filter(x => !remoteIds.has(String(x.id)));
+    expenses = [...localOnly, ...remote.filter(x => !x.deletedAt)];
+    if (!saveExpenses()) throw new Error("Browser could not cache shared expenses");
+    renderExpenses();
+  } catch (e) {
+    console.warn("Shared expenses refresh failed:", e);
+  }
+}
+
 /* Experimental one-way upload: no local replacement, remote import, or delete syncing. */
 async function uploadLocalExpensesToServer() {
   const status = $("xSyncStatus");
@@ -2391,6 +2406,7 @@ async function doOwnerLogin() {
       session = { role: "owner", online: true };
       msg(""); loadCart(); applyRole(); showTab("dashboard");
       void syncProductsAfterLogin();
+      void refreshSharedExpenses();
     } catch (_) { msg("Could not reach the server. Check your connection and try again."); }
     return;
   }
