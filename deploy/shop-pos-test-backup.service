@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up and verify test POS SQLite database
+
+[Service]
+Type=oneshot
+User=linux
+WorkingDirectory=/home/linux/shop-pos-test
+ExecStart=/usr/bin/node /home/linux/shop-pos-test/scripts/backup-test.js
