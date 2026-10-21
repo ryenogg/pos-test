@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily test POS SQLite backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+Unit=shop-pos-test-backup.service
+
+[Install]
+WantedBy=timers.target
