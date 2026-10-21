@@ -1782,14 +1782,33 @@ function saveSales() {
 }
 
 
-/* Import server receipts by stable ID; never upload or discard device-only sales. */
+/* Preserve browser-only records before reconciling the online Owner view.
+   Never clear localStorage or send browser-only records to the server. */
+function backupExcludedOwnerRecords(kind, records) {
+  if (!records.length) return true;
+  const markerKey = "pos_owner_sync_excluded_marker_" + kind;
+  const serialized = JSON.stringify(records);
+  try {
+    if (localStorage.getItem(markerKey) === serialized) return true;
+    const key = "pos_owner_sync_excluded_" + kind + "_" + new Date().toISOString();
+    localStorage.setItem(key, serialized);
+    localStorage.setItem(markerKey, serialized);
+    return true;
+  } catch (e) {
+    liveSyncStatus("Sync paused: cannot back up browser-only " + kind, true);
+    return false;
+  }
+}
+
+/* Refresh online Owner sales from the server; archive browser-only receipts. */
 async function refreshSharedSales() {
   if (!session || !session.online || !isOwner()) return;
   try {
     const remote = (await serverApi("/api/sales")).sales || [];
     const remoteIds = new Set(remote.map(s => String(s.id)));
     const localOnly = sales.filter(s => !s.id || !remoteIds.has(String(s.id)));
-    const merged = [...localOnly, ...remote];
+    if (!backupExcludedOwnerRecords("sales", localOnly)) return;
+    const merged = remote;
     const previous = sales;
     sales = merged;
     if (!saveSales()) {
@@ -1858,7 +1877,9 @@ async function pollLiveSync() {
     }
     const remoteSales = snapshot.sales || [];
     const saleIds = new Set(remoteSales.map(x => String(x.id)));
-    const nextSales = [...sales.filter(x => !x.id || !saleIds.has(String(x.id))), ...remoteSales];
+    const excludedSales = sales.filter(x => !x.id || !saleIds.has(String(x.id)));
+    if (!backupExcludedOwnerRecords("sales", excludedSales)) return;
+    const nextSales = remoteSales;
     if (JSON.stringify(sales) !== JSON.stringify(nextSales)) {
       const previous = sales; sales = nextSales;
       if (!saveSales()) sales = previous;
@@ -1866,7 +1887,9 @@ async function pollLiveSync() {
     }
     const remoteExpenses = snapshot.expenses || [];
     const expenseIds = new Set(remoteExpenses.map(x => String(x.id)));
-    const nextExpenses = [...expenses.filter(x => !expenseIds.has(String(x.id))), ...remoteExpenses.filter(x => !x.deletedAt)];
+    const excludedExpenses = expenses.filter(x => !expenseIds.has(String(x.id)));
+    if (!backupExcludedOwnerRecords("expenses", excludedExpenses)) return;
+    const nextExpenses = remoteExpenses.filter(x => !x.deletedAt);
     if (JSON.stringify(expenses) !== JSON.stringify(nextExpenses)) {
       const previous = expenses; expenses = nextExpenses;
       if (!saveExpenses()) expenses = previous;
