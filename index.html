@@ -176,6 +176,14 @@
   }
   @media print { #cartPanel, #toast { display: none !important; } body.has-cart { padding: 0 !important; } }
 </style>
+<style>
+.checkout-product-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(145px,1fr)); gap:10px; margin-top:8px; }
+.checkout-product-tile { display:flex; flex-direction:column; align-items:flex-start; gap:6px; text-align:left; min-height:126px; padding:12px; border:1px solid #b5bfc4; border-radius:12px; background:var(--card,#fff); color:inherit; cursor:pointer; overflow-wrap:anywhere; }
+.checkout-product-tile strong { line-height:1.3; }
+.checkout-product-tile b { margin-top:auto; font-size:1.1em; }
+.checkout-product-tile.out-of-stock { opacity:.6; }
+@media (max-width:480px) { .checkout-product-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .checkout-product-tile { padding:10px; } }
+</style>
 </head>
 <body>
 <div id="topbar" hidden>
@@ -298,21 +306,28 @@
 
 <main id="checkoutView" hidden>
   <h1>Checkout</h1>
-  <div class="cam" id="camPanel">
+  <div class="cam" id="camPanel" hidden>
     <video id="liveVideo" playsinline muted></video>
     <div class="cam-off">Camera is off</div>
   </div>
-  <button id="camBtn" type="button" style="width:100%;margin-bottom:6px">Start camera</button>
+  <button id="camBtn" type="button" hidden>Start camera</button>
   <p class="meta" id="liveMsg" style="margin:0 0 12px"></p>
-  <div class="bar">
+  <div class="bar" hidden>
     <input id="scanInput" inputmode="search" autocomplete="off" placeholder="Barcode or product name, then Enter">
     <button id="cartScanBtn" type="button">Scan</button>
   </div>
-  <div class="sugg" id="sugg"></div>
+  <div class="sugg" id="sugg" hidden></div>
   <button id="customSaleBtn" type="button" style="width:100%;margin:8px 0">+ Custom sale (not in inventory)</button>
   <h2 class="sec">Browse products</h2>
-  <input id="browseSearch" placeholder="Search products" autocomplete="off">
-  <div id="browseList" style="margin-top:8px"></div>
+  <input id="browseSearch" placeholder="Search products by name or barcode" autocomplete="off">
+  <label for="browseSort" style="margin-top:10px">Sort products</label>
+  <select id="browseSort" style="margin-bottom:8px">
+    <option value="name">Name (A–Z)</option>
+    <option value="category">Category (A–Z)</option>
+    <option value="price-asc">Price (low to high)</option>
+    <option value="price-desc">Price (high to low)</option>
+  </select>
+  <div id="browseList" class="checkout-product-grid"></div>
 </main>
 
 <dialog id="customSaleDlg">
@@ -1587,20 +1602,29 @@ function setPanelOpen(open) {
 // Products you can tap to add to the sale
 function renderBrowse() {
   const q = $("browseSearch").value.trim().toLowerCase();
+  const sort = $("browseSort").value;
   const list = $("browseList");
   list.textContent = "";
-  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q)).sort(byName).slice(0, 40);
+  const shown = items.filter(i => !q || i.name.toLowerCase().includes(q) || (i.barcode || "").includes(q));
+  shown.sort((a, b) => {
+    if (sort === "category") return (catName(a) || "Uncategorized").localeCompare(catName(b) || "Uncategorized") || byName(a, b);
+    if (sort === "price-asc") return a.price - b.price || byName(a, b);
+    if (sort === "price-desc") return b.price - a.price || byName(a, b);
+    return byName(a, b);
+  });
   if (!shown.length) { const p = document.createElement("p"); p.className = "empty"; p.textContent = items.length ? "No products match your search." : "No products yet."; list.appendChild(p); }
   for (const it of shown) {
-    const row = document.createElement("button"); row.className = "srow";
-    const left = document.createElement("span"); left.textContent = it.name;
-    const small = document.createElement("small");
-    small.textContent = (catName(it) || "Uncategorized") + " · " + (it.stock > 0 ? it.stock + " in stock" : "out of stock");
-    left.appendChild(small);
-    const right = document.createElement("strong"); right.textContent = money(it.price);
-    row.append(left, right);
-    row.onclick = () => { if (it.stock <= 0) showMsg("“" + it.name + "” is out of stock."); else addItem(it); };
-    list.appendChild(row);
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "checkout-product-tile";
+    if (it.stock <= 0) tile.classList.add("out-of-stock");
+    const name = document.createElement("strong"); name.textContent = it.name;
+    const category = document.createElement("span"); category.className = "meta"; category.textContent = catName(it) || "Uncategorized";
+    const stock = document.createElement("span"); stock.className = "meta"; stock.textContent = it.stock > 0 ? it.stock + " in stock" : "Out of stock";
+    const price = document.createElement("b"); price.textContent = money(it.price);
+    tile.append(name, category, stock, price);
+    tile.onclick = () => { if (it.stock <= 0) showMsg("“" + it.name + "” is out of stock."); else addItem(it); };
+    list.appendChild(tile);
   }
 }
 
@@ -3585,6 +3609,7 @@ $("backupClose").onclick = () => $("backupDlg").close();
 $("tabItems").onclick = () => showTab("items");
 $("tabCheckout").onclick = () => showTab("checkout");
 $("scanInput").addEventListener("keydown", e => { if (e.key === "Enter") addToCart($("scanInput").value); });
+$("browseSort").addEventListener("change", renderBrowse);
 $("camBtn").onclick = () => (liveStream ? stopLive() : startLive());
 $("cartScanBtn").onclick = () => { stopLive(); startScan(addToCart); };
 $("clearBtn").onclick = () => {
