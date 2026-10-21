@@ -29,13 +29,22 @@ async function main() {
     const before = db.prepare('SELECT id,stock,batches_json FROM products ORDER BY id').all();
     const originalSales = db.prepare('SELECT COUNT(*) AS n FROM sales').get().n;
     const originalLines = db.prepare('SELECT COUNT(*) AS n FROM sale_items').get().n;
+    const originalShifts = db.prepare('SELECT COUNT(*) AS n FROM shifts').get().n;
     const columns = new Set(db.pragma('table_info(sales)').map(c => c.name));
     if (!columns.has('metadata_json')) db.exec("ALTER TABLE sales ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'");
     const cents = n => Math.round(Number(n) * 100);
     const insertSale = db.prepare('INSERT INTO sales (id,receipt_no,date,total,received,change_amount,method,reference,pay_note,shift_id,cashier_id,cashier_name,created_at,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     const insertLine = db.prepare('INSERT INTO sale_items (sale_id,product_id,product_name,barcode,price,cost,quantity) VALUES (?,?,?,?,?,?,?)');
-    let inserted = 0, skipped = 0, lines = 0;
+    const insertShift = db.prepare('INSERT INTO shifts (id,cashier_id,cashier_name,started_at,ended_at,opening_cash,closing_cash,expected_cash,difference,selfie_path,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    let inserted = 0, skipped = 0, lines = 0, shiftsInserted = 0, shiftsSkipped = 0;
     db.transaction(() => {
+      for (const sh of backup.shifts) {
+        if (!sh || typeof sh.id !== 'string' || !sh.id || !sh.openedAt || !Number.isFinite(Date.parse(sh.openedAt)) || typeof sh.cashier !== 'string' || !Number.isFinite(sh.float) || sh.float < 0 || (sh.closedAt != null && !Number.isFinite(Date.parse(sh.closedAt)))) throw Error('Invalid shift record');
+        const existing = db.prepare('SELECT metadata_json FROM shifts WHERE id=?').get(sh.id);
+        if (existing) { if (JSON.stringify(JSON.parse(existing.metadata_json)) !== JSON.stringify(sh)) throw Error('Shift ID conflict'); shiftsSkipped++; continue; }
+        insertShift.run(sh.id,sh.cashierId||null,sh.cashier,sh.openedAt,sh.closedAt||null,cents(sh.float),null,null,null,null,JSON.stringify(sh));
+        shiftsInserted++;
+      }
       for (const s of backup.sales) {
         const id = 'browser-sale-' + s.no + '-' + s.date;
         const existing = db.prepare('SELECT id,metadata_json FROM sales WHERE receipt_no=?').get(s.no);
@@ -54,11 +63,12 @@ async function main() {
     if (db.pragma('integrity_check',{simple:true})!=='ok') throw Error('Database integrity check failed');
     if (db.prepare('SELECT COUNT(*) AS n FROM sales').get().n !== originalSales+inserted) throw Error('Sales count mismatch');
     if (db.prepare('SELECT COUNT(*) AS n FROM sale_items').get().n !== originalLines+lines) throw Error('Sale items count mismatch');
+    if (db.prepare('SELECT COUNT(*) AS n FROM shifts').get().n !== originalShifts+shiftsInserted) throw Error('Shift count mismatch');
     console.log('PASS: source live database opened read-only and copied');
     console.log('PASS: inventory IDs, stock and batches unchanged ('+before.length+' products)');
     console.log('PASS: imported '+inserted+' sales, '+lines+' lines; '+skipped+' already present');
     console.log('PASS: temporary database integrity ok');
-    console.log('NOTE: '+backup.shifts.length+' browser shift(s) identified; shift import not yet implemented');
+    console.log('PASS: imported '+shiftsInserted+' shift(s); '+shiftsSkipped+' already present');
     console.log('Rehearsal copy:',copyPath);
   } finally { db.close(); }
 }
