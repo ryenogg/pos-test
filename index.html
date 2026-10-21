@@ -1833,7 +1833,18 @@ async function pollLiveSync() {
     if (!$("formDlg").open && !productSaveInProgress && generationAtStart === productChangeGeneration) {
       const byId = new Map(remoteProducts.map(p => [String(p.id), p]));
       const localOnly = items.filter(p => !byId.has(String(p.id)));
-      const next = [...localOnly, ...remoteProducts.map(p => migrateItem({ ...p }))];
+      // Online owner inventory is server-authoritative. Preserve excluded local
+      // records in a browser backup before removing them from the visible list.
+      if (localOnly.length) {
+        const backupKey = "pos_products_before_server_sync_" + new Date().toISOString();
+        try {
+          localStorage.setItem(backupKey, JSON.stringify(items));
+        } catch (_) {
+          liveSyncStatus("Sync paused: could not back up local-only products", true);
+          return;
+        }
+      }
+      const next = remoteProducts.map(p => migrateItem({ ...p }));
       if (JSON.stringify(items) !== JSON.stringify(next)) {
         const previous = items;
         items = next;
